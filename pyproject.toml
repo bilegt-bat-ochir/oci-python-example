@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oci-exacc-app"
+version = "0.1.0"
+description = "Reusable OCI Exadata Cloud@Customer inventory dashboard and operations CLI"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "oci>=2.48.0",
+]
+
+[project.scripts]
+exacc-app = "exacc_app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
