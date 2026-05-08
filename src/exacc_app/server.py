@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from configparser import ConfigParser
+from datetime import datetime, timedelta, timezone
 import json
+import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -11,6 +13,16 @@ from .dashboard import render_dashboard
 from .models import Inventory
 from .oci_gateway import OCIAppError, OCIInventoryClient
 from .sample_data import sample_inventory
+
+
+METRIC_INTERVALS = {
+    "1m": timedelta(minutes=1),
+    "5m": timedelta(minutes=5),
+    "15m": timedelta(minutes=15),
+    "30m": timedelta(minutes=30),
+    "1h": timedelta(hours=1),
+    "1d": timedelta(days=1),
+}
 
 
 def list_oci_profiles(config_file: str = "~/.oci/config") -> list[str]:
@@ -27,6 +39,105 @@ def list_oci_profiles(config_file: str = "~/.oci/config") -> list[str]:
         profiles.append("DEFAULT")
     profiles.extend(parser.sections())
     return sorted(set(profiles), key=lambda item: (item != "DEFAULT", item.lower()))
+
+
+def parse_metric_time(value: Any, fallback: datetime) -> datetime:
+    if not value:
+        return fallback
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise OCIAppError(f"Invalid metric time '{value}'. Use ISO 8601 format.") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def sample_vm_cluster_metrics(
+    *,
+    vm_cluster_id: str,
+    vm_cluster_name: str,
+    compartment_id: str,
+    region: str,
+    start_time: datetime,
+    end_time: datetime,
+    interval: str,
+) -> Dict[str, Any]:
+    step = METRIC_INTERVALS.get(interval, METRIC_INTERVALS["1h"])
+    points: list[datetime] = []
+    cursor = start_time
+    while cursor <= end_time and len(points) < 1500:
+        points.append(cursor)
+        cursor += step
+
+    node_labels = [
+        f"{vm_cluster_name or 'vm-cluster'}-dbnode1",
+        f"{vm_cluster_name or 'vm-cluster'}-dbnode2",
+    ]
+
+    def build_series(
+        metric_name: str, baseline: float, amplitude: float
+    ) -> Dict[str, Any]:
+        series = []
+        for node_index, label in enumerate(node_labels):
+            datapoints = []
+            for point_index, timestamp in enumerate(points):
+                wave = math.sin((point_index + 1 + node_index) / 3.0)
+                trend = (point_index % 6) * 1.6
+                value = max(
+                    0.0,
+                    min(
+                        100.0,
+                        baseline + amplitude * wave + trend + node_index * 4,
+                    ),
+                )
+                datapoints.append(
+                    {
+                        "timestamp": timestamp.isoformat(),
+                        "value": round(value, 2),
+                    }
+                )
+            series.append(
+                {
+                    "label": label,
+                    "dimensions": {
+                        "resourceId": vm_cluster_id,
+                        "resourceName": vm_cluster_name,
+                        "hostName": label,
+                    },
+                    "points": datapoints,
+                }
+            )
+        display_name = (
+            "CPU Utilization"
+            if metric_name == "CpuUtilization"
+            else "Memory Utilization"
+        )
+        return {
+            "name": metric_name,
+            "display_name": display_name,
+            "unit": "percent",
+            "query": (
+                f'sample {metric_name}[{interval}]{{resourceId = "{vm_cluster_id}"}}'
+                ".groupBy(hostName).mean()"
+            ),
+            "series": series,
+        }
+
+    return {
+        "namespace": "oci_database_cluster",
+        "resource_id": vm_cluster_id,
+        "resource_name": vm_cluster_name,
+        "region": region,
+        "compartment_id": compartment_id,
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "interval": interval,
+        "metrics": {
+            "CpuUtilization": build_series("CpuUtilization", 34.0, 15.0),
+            "MemoryUtilization": build_series("MemoryUtilization", 58.0, 8.0),
+        },
+    }
 
 
 def serve_inventory_dashboard(
@@ -53,6 +164,9 @@ def serve_inventory_dashboard(
             parsed = urlparse(self.path)
             if parsed.path == "/api/inventory":
                 self._handle_inventory_load()
+                return
+            if parsed.path == "/api/vm-cluster-metrics":
+                self._handle_vm_cluster_metrics()
                 return
             self._send_json(404, {"error": "Not found"})
 
@@ -91,6 +205,72 @@ def serve_inventory_dashboard(
                 self._send_json(500, {"error": f"Could not load inventory: {exc}"})
                 return
             self._send_json(200, loaded.to_dict())
+
+        def _handle_vm_cluster_metrics(self) -> None:
+            try:
+                data = self._read_json()
+                vm_cluster_id = str(data.get("vm_cluster_id") or "").strip()
+                vm_cluster_name = str(data.get("vm_cluster_name") or "").strip()
+                compartment_id = str(data.get("compartment_id") or "").strip()
+                region = str(data.get("region") or "").strip()
+                if not vm_cluster_id:
+                    raise OCIAppError("VM cluster OCID is required.")
+                if not compartment_id:
+                    raise OCIAppError("VM cluster compartment OCID is required.")
+                if not region:
+                    raise OCIAppError("VM cluster region is required.")
+
+                interval = str(data.get("interval") or "1h").strip()
+                if interval not in METRIC_INTERVALS:
+                    raise OCIAppError(
+                        "Metric interval must be one of "
+                        f"{', '.join(METRIC_INTERVALS)}."
+                    )
+
+                now = datetime.now(timezone.utc)
+                end_time = parse_metric_time(data.get("end_time"), now)
+                start_time = parse_metric_time(
+                    data.get("start_time"), end_time - timedelta(days=1)
+                )
+                if start_time >= end_time:
+                    raise OCIAppError("Metric start time must be before end time.")
+
+                if data.get("sample"):
+                    metrics = sample_vm_cluster_metrics(
+                        vm_cluster_id=vm_cluster_id,
+                        vm_cluster_name=vm_cluster_name,
+                        compartment_id=compartment_id,
+                        region=region,
+                        start_time=start_time,
+                        end_time=end_time,
+                        interval=interval,
+                    )
+                else:
+                    profile = str(data.get("profile", "")).strip()
+                    if not profile:
+                        raise OCIAppError("OCI profile is required.")
+                    client = OCIInventoryClient(
+                        profile=profile,
+                        config_file=str(data.get("config_file") or "~/.oci/config"),
+                    )
+                    metrics = client.fetch_vm_cluster_metrics(
+                        vm_cluster_id=vm_cluster_id,
+                        vm_cluster_name=vm_cluster_name,
+                        compartment_id=compartment_id,
+                        region=region,
+                        start_time=start_time,
+                        end_time=end_time,
+                        interval=interval,
+                    )
+            except OCIAppError as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(
+                    500, {"error": f"Could not load VM cluster metrics: {exc}"}
+                )
+                return
+            self._send_json(200, metrics)
 
         def _read_json(self) -> Dict[str, Any]:
             length = int(self.headers.get("Content-Length", "0") or "0")

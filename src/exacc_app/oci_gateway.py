@@ -160,6 +160,51 @@ class OCIInventoryClient:
 
         return decisions
 
+    def fetch_vm_cluster_metrics(
+        self,
+        *,
+        vm_cluster_id: str,
+        vm_cluster_name: str,
+        compartment_id: str,
+        region: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: str = "1h",
+    ) -> Dict[str, Any]:
+        config = self.oci.config.from_file(self.config_file, self.profile)
+        config = self._region_config(config, region)
+        monitoring_client = self.oci.monitoring.MonitoringClient(config)
+        namespace = "oci_database_cluster"
+        metrics = [
+            ("CpuUtilization", "CPU Utilization", "percent"),
+            ("MemoryUtilization", "Memory Utilization", "percent"),
+        ]
+        return {
+            "namespace": namespace,
+            "resource_id": vm_cluster_id,
+            "resource_name": vm_cluster_name,
+            "region": region,
+            "compartment_id": compartment_id,
+            "start_time": self._stringify_time(start_time),
+            "end_time": self._stringify_time(end_time),
+            "interval": interval,
+            "metrics": {
+                metric_name: self._fetch_metric_series(
+                    monitoring_client=monitoring_client,
+                    compartment_id=compartment_id,
+                    namespace=namespace,
+                    metric_name=metric_name,
+                    display_name=display_name,
+                    unit=unit,
+                    vm_cluster_id=vm_cluster_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval,
+                )
+                for metric_name, display_name, unit in metrics
+            },
+        }
+
     def _load_context(self) -> Dict[str, Any]:
         try:
             config = self.oci.config.from_file(self.config_file, self.profile)
@@ -447,6 +492,73 @@ class OCIInventoryClient:
             resources.extend(response.data)
         return resources
 
+    def _fetch_metric_series(
+        self,
+        *,
+        monitoring_client: Any,
+        compartment_id: str,
+        namespace: str,
+        metric_name: str,
+        display_name: str,
+        unit: str,
+        vm_cluster_id: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: str,
+    ) -> Dict[str, Any]:
+        escaped_id = self._mql_value(vm_cluster_id)
+        query = (
+            f'{metric_name}[{interval}]{{resourceId = "{escaped_id}"}}'
+            ".groupBy(hostName).mean()"
+        )
+        details = self.oci.monitoring.models.SummarizeMetricsDataDetails(
+            namespace=namespace,
+            query=query,
+            start_time=start_time,
+            end_time=end_time,
+            resolution=interval,
+        )
+        response = monitoring_client.summarize_metrics_data(
+            compartment_id=compartment_id,
+            summarize_metrics_data_details=details,
+            retry_strategy=self.retry_strategy,
+        )
+        series = []
+        for item in response.data:
+            dimensions = getattr(item, "dimensions", {}) or {}
+            label = (
+                dimensions.get("hostName")
+                or dimensions.get("resourceName_dbnode")
+                or dimensions.get("resourceName")
+                or metric_name
+            )
+            datapoints = []
+            for datapoint in getattr(item, "aggregated_datapoints", []) or []:
+                datapoints.append(
+                    {
+                        "timestamp": self._stringify_time(
+                            getattr(datapoint, "timestamp", "")
+                        ),
+                        "value": getattr(datapoint, "value", None),
+                    }
+                )
+            series.append(
+                {
+                    "label": label,
+                    "dimensions": dimensions,
+                    "points": sorted(
+                        datapoints, key=lambda point: point.get("timestamp", "")
+                    ),
+                }
+            )
+        return {
+            "name": metric_name,
+            "display_name": display_name,
+            "unit": unit,
+            "query": query,
+            "series": sorted(series, key=lambda item: item.get("label", "")),
+        }
+
     def _to_infrastructure(
         self, context: Dict[str, Any], region: str, item: Any
     ) -> ExadataInfrastructure:
@@ -680,6 +792,10 @@ class OCIInventoryClient:
         if callable(isoformat):
             return isoformat()
         return str(value)
+
+    @staticmethod
+    def _mql_value(value: str) -> str:
+        return str(value).replace("\\", "\\\\").replace('"', '\\"')
 
     @staticmethod
     def _console_url(

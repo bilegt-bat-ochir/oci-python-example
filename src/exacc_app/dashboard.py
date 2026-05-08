@@ -792,6 +792,175 @@ def render_dashboard(inventory: Inventory) -> str:
       font-size: 13px;
     }}
 
+    .metric-controls {{
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+      gap: 12px;
+      align-items: end;
+    }}
+
+    .metric-control {{
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }}
+
+    .metric-control span {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }}
+
+    .metric-control input,
+    .metric-control select {{
+      width: 100%;
+      min-width: 0;
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      padding: 0 10px;
+      font: inherit;
+    }}
+
+    .metric-actions {{
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }}
+
+    .metric-apply-button {{
+      border: 0;
+      border-radius: 8px;
+      background: #2557a7;
+      color: #ffffff;
+      cursor: pointer;
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      font: inherit;
+      font-weight: 800;
+    }}
+
+    .metric-apply-button:hover {{
+      background: #1f4b92;
+    }}
+
+    .metric-apply-button:disabled,
+    .metric-actions .icon-button:disabled {{
+      cursor: wait;
+      opacity: 0.68;
+    }}
+
+    .metric-status {{
+      padding: 10px 18px 0;
+      color: var(--muted);
+      font-size: 12px;
+      min-height: 24px;
+      overflow-wrap: anywhere;
+    }}
+
+    .metric-status[data-tone="critical"] {{
+      color: var(--red);
+    }}
+
+    .chart-grid {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      padding: 16px 18px 18px;
+    }}
+
+    .metric-chart {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      min-width: 0;
+      overflow: hidden;
+    }}
+
+    .metric-chart-head {{
+      padding: 14px 14px 0;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }}
+
+    .metric-chart h4 {{
+      margin: 0;
+      font-size: 14px;
+    }}
+
+    .metric-chart small {{
+      color: var(--muted);
+      display: block;
+      margin-top: 4px;
+    }}
+
+    .chart-summary {{
+      text-align: right;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: nowrap;
+    }}
+
+    .chart-summary strong {{
+      color: var(--ink);
+      display: block;
+      font-size: 18px;
+    }}
+
+    .chart-svg {{
+      width: 100%;
+      height: auto;
+      display: block;
+      padding: 8px 8px 0;
+      overflow: visible;
+    }}
+
+    .chart-axis {{
+      fill: #667085;
+      font-size: 10px;
+    }}
+
+    .chart-gridline {{
+      stroke: #e5e9f0;
+      stroke-width: 1;
+    }}
+
+    .chart-legend {{
+      padding: 0 14px 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+
+    .legend-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }}
+
+    .legend-dot {{
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      flex: 0 0 8px;
+    }}
+
     @media (max-width: 920px) {{
       .shell {{ grid-template-columns: 1fr; }}
       .rail {{
@@ -832,12 +1001,24 @@ def render_dashboard(inventory: Inventory) -> str:
       .detail-grid {{
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }}
+      .metric-controls {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
+      .metric-actions {{
+        justify-content: flex-start;
+      }}
+      .chart-grid {{
+        grid-template-columns: 1fr;
+      }}
     }}
 
     @media (max-width: 560px) {{
       .content, .topbar {{ padding: 16px; }}
       .metrics {{ grid-template-columns: 1fr; }}
       .detail-grid {{ grid-template-columns: 1fr; }}
+      .metric-controls {{ grid-template-columns: 1fr; }}
+      .chart-summary {{ text-align: left; }}
+      .metric-chart-head {{ flex-direction: column; }}
       .brand h1 {{ font-size: 15px; }}
       .headline h2 {{ font-size: 22px; }}
     }}
@@ -940,11 +1121,18 @@ def render_dashboard(inventory: Inventory) -> str:
       compartmentPath: "root",
       detailType: "",
       detailId: "",
-      detailFromView: "overview"
+      detailFromView: "overview",
+      inventorySource: {{ sample: false }},
+      metricWindows: {{}},
+      metricLoads: {{}}
     }};
 
     const icons = {{
-      open: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 17L17 7"></path><path d="M8 7h9v9"></path></svg>'
+      open: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 17L17 7"></path><path d="M8 7h9v9"></path></svg>',
+      refresh: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2"></path><path d="M3 12A9 9 0 0 1 18.5 5.8"></path><path d="M18 2v4h4"></path><path d="M6 22v-4H2"></path></svg>',
+      left: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"></path></svg>',
+      right: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"></path></svg>',
+      clock: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>'
     }};
 
     function escapeHtml(value) {{
@@ -981,6 +1169,8 @@ def render_dashboard(inventory: Inventory) -> str:
       state.detailType = "";
       state.detailId = "";
       state.detailFromView = "overview";
+      state.metricWindows = {{}};
+      state.metricLoads = {{}};
       state.view = state.view === "detail" ? "overview" : state.view;
       document.title = `ExaCC Operations - ${{inventory.tenant_name || "Inventory"}}`;
       setCounts();
@@ -1237,6 +1427,7 @@ def render_dashboard(inventory: Inventory) -> str:
           body: JSON.stringify(payload)
         }});
         const data = await readJson(response);
+        state.inventorySource = {{ ...payload }};
         setInventory(data);
         setProfileStatus(payload.sample ? "Demo inventory loaded" : `${{payload.profile}} loaded`, "healthy");
       }} catch (error) {{
@@ -1244,6 +1435,320 @@ def render_dashboard(inventory: Inventory) -> str:
       }} finally {{
         setLoaderBusy(false);
       }}
+    }}
+
+    const metricIntervals = [
+      ["5m", "5 min"],
+      ["15m", "15 min"],
+      ["30m", "30 min"],
+      ["1h", "1 hour"],
+      ["1d", "1 day"]
+    ];
+    const chartColors = ["#2557a7", "#1f7a4d", "#a15c0b", "#0e7490", "#b42318"];
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    function defaultMetricWindow() {{
+      const end = new Date();
+      end.setMinutes(0, 0, 0);
+      const start = new Date(end.getTime() - dayMs);
+      return {{
+        startIso: start.toISOString(),
+        endIso: end.toISOString(),
+        interval: "1h"
+      }};
+    }}
+
+    function metricWindowFor(clusterId) {{
+      if (!state.metricWindows[clusterId]) {{
+        state.metricWindows[clusterId] = defaultMetricWindow();
+      }}
+      return state.metricWindows[clusterId];
+    }}
+
+    function metricRecordFor(clusterId) {{
+      if (!state.metricLoads[clusterId]) {{
+        state.metricLoads[clusterId] = {{
+          key: "",
+          loading: false,
+          error: "",
+          data: null
+        }};
+      }}
+      return state.metricLoads[clusterId];
+    }}
+
+    function metricRequestKey(metricWindow) {{
+      return `${{metricWindow.startIso}}|${{metricWindow.endIso}}|${{metricWindow.interval}}`;
+    }}
+
+    function toLocalInputValue(isoValue) {{
+      const date = new Date(isoValue);
+      if (Number.isNaN(date.getTime())) return "";
+      const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 16);
+    }}
+
+    function fromLocalInputValue(value) {{
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "";
+      return date.toISOString();
+    }}
+
+    function formatChartTime(value) {{
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      return new Intl.DateTimeFormat(undefined, {{
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }}).format(date);
+    }}
+
+    function formatPercent(value) {{
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return "-";
+      return `${{numeric.toFixed(1)}}%`;
+    }}
+
+    function metricPayload(item) {{
+      const metricWindow = metricWindowFor(item.id);
+      return {{
+        profile: document.getElementById("profileInput").value.trim(),
+        config_file: document.getElementById("configFileInput").value.trim() || "~/.oci/config",
+        sample: Boolean(state.inventorySource && state.inventorySource.sample),
+        vm_cluster_id: item.id,
+        vm_cluster_name: item.display_name || item.id,
+        compartment_id: item.compartment_id,
+        region: item.region,
+        start_time: metricWindow.startIso,
+        end_time: metricWindow.endIso,
+        interval: metricWindow.interval || "1h"
+      }};
+    }}
+
+    function metricLoadingChanged(item) {{
+      return state.view === "detail"
+        && state.detailType === "vm_cluster"
+        && state.detailId === item.id;
+    }}
+
+    async function loadVmClusterMetrics(item, force = false) {{
+      const metricWindow = metricWindowFor(item.id);
+      const key = metricRequestKey(metricWindow);
+      const record = metricRecordFor(item.id);
+      if (!force && (record.loading || record.key === key)) return;
+      if (!apiAvailable()) {{
+        state.metricLoads[item.id] = {{
+          ...record,
+          key,
+          loading: false,
+          error: "Local server unavailable",
+          data: null
+        }};
+        render();
+        return;
+      }}
+
+      state.metricLoads[item.id] = {{
+        ...record,
+        key,
+        loading: true,
+        error: ""
+      }};
+      render();
+
+      try {{
+        const response = await fetch("/api/vm-cluster-metrics", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(metricPayload(item))
+        }});
+        const data = await readJson(response);
+        state.metricLoads[item.id] = {{
+          key,
+          loading: false,
+          error: "",
+          data
+        }};
+      }} catch (error) {{
+        state.metricLoads[item.id] = {{
+          key,
+          loading: false,
+          error: error.message,
+          data: null
+        }};
+      }}
+
+      if (metricLoadingChanged(item)) {{
+        render();
+      }}
+    }}
+
+    function maybeLoadVmClusterMetrics(item) {{
+      const metricWindow = metricWindowFor(item.id);
+      const record = metricRecordFor(item.id);
+      const key = metricRequestKey(metricWindow);
+      if (!record.loading && record.key !== key) {{
+        loadVmClusterMetrics(item);
+      }}
+    }}
+
+    function intervalOption(value, label, selected) {{
+      return `<option value="${{escapeHtml(value)}}"${{value === selected ? " selected" : ""}}>${{escapeHtml(label)}}</option>`;
+    }}
+
+    function metricStats(metricData) {{
+      const points = (metricData.series || [])
+        .flatMap((series) => series.points || [])
+        .map((point) => Number(point.value))
+        .filter((value) => Number.isFinite(value));
+      if (!points.length) {{
+        return {{ latest: null, average: null, samples: 0 }};
+      }}
+      const latestSeriesPoints = (metricData.series || [])
+        .flatMap((series) => series.points || [])
+        .filter((point) => Number.isFinite(Number(point.value)) && !Number.isNaN(Date.parse(point.timestamp || "")))
+        .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+      const latest = latestSeriesPoints.length
+        ? Number(latestSeriesPoints[latestSeriesPoints.length - 1].value)
+        : points[points.length - 1];
+      const average = points.reduce((total, value) => total + value, 0) / points.length;
+      return {{ latest, average, samples: points.length }};
+    }}
+
+    function chartPath(points, minTime, maxTime, chart) {{
+      const span = Math.max(1, maxTime - minTime);
+      return points
+        .filter((point) => Number.isFinite(Number(point.value)) && !Number.isNaN(Date.parse(point.timestamp || "")))
+        .map((point, index) => {{
+          const timestamp = Date.parse(point.timestamp);
+          const value = Math.max(0, Math.min(100, Number(point.value)));
+          const x = chart.left + ((timestamp - minTime) / span) * chart.width;
+          const y = chart.top + (1 - value / 100) * chart.height;
+          return `${{index ? "L" : "M"}} ${{x.toFixed(1)}} ${{y.toFixed(1)}}`;
+        }})
+        .join(" ");
+    }}
+
+    function renderMetricChart(metricData) {{
+      const series = (metricData && metricData.series ? metricData.series : [])
+        .map((item) => ({{
+          ...item,
+          points: (item.points || []).filter((point) => Number.isFinite(Number(point.value)) && !Number.isNaN(Date.parse(point.timestamp || "")))
+        }}))
+        .filter((item) => item.points.length);
+      const title = metricData ? metricData.display_name || metricData.name : "Metric";
+      if (!series.length) {{
+        return `<article class="metric-chart">
+          <div class="metric-chart-head"><div><h4>${{escapeHtml(title)}}</h4><small>No metric points returned</small></div></div>
+          <div class="empty">No data for this timeframe</div>
+        </article>`;
+      }}
+
+      const allTimes = series.flatMap((item) => item.points.map((point) => Date.parse(point.timestamp)));
+      const minTime = Math.min(...allTimes);
+      const maxTime = Math.max(...allTimes);
+      const chart = {{ left: 44, top: 18, width: 580, height: 186 }};
+      const grid = [0, 25, 50, 75, 100].map((value) => {{
+        const y = chart.top + (1 - value / 100) * chart.height;
+        return `<line class="chart-gridline" x1="${{chart.left}}" y1="${{y.toFixed(1)}}" x2="${{chart.left + chart.width}}" y2="${{y.toFixed(1)}}"></line><text class="chart-axis" x="6" y="${{(y + 3).toFixed(1)}}">${{value}}%</text>`;
+      }}).join("");
+      const paths = series.map((item, index) => {{
+        const color = chartColors[index % chartColors.length];
+        const path = chartPath(item.points, minTime, maxTime, chart);
+        return `<path d="${{path}}" fill="none" stroke="${{color}}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>`;
+      }}).join("");
+      const legend = series.map((item, index) => {{
+        const color = chartColors[index % chartColors.length];
+        return `<span class="legend-item"><span class="legend-dot" style="background:${{color}}"></span>${{escapeHtml(item.label || `Node ${{index + 1}}`)}}</span>`;
+      }}).join("");
+      const stats = metricStats({{ ...metricData, series }});
+      return `<article class="metric-chart">
+        <div class="metric-chart-head">
+          <div><h4>${{escapeHtml(title)}}</h4><small>${{escapeHtml(metricData.name || "")}}</small></div>
+          <div class="chart-summary"><strong>${{formatPercent(stats.latest)}}</strong>avg ${{formatPercent(stats.average)}}</div>
+        </div>
+        <svg class="chart-svg" viewBox="0 0 650 242" role="img" aria-label="${{escapeHtml(title)}} chart">
+          ${{grid}}
+          <line class="chart-gridline" x1="${{chart.left}}" y1="${{chart.top + chart.height}}" x2="${{chart.left + chart.width}}" y2="${{chart.top + chart.height}}"></line>
+          ${{paths}}
+          <text class="chart-axis" x="${{chart.left}}" y="230">${{escapeHtml(formatChartTime(minTime))}}</text>
+          <text class="chart-axis" x="${{chart.left + chart.width - 110}}" y="230">${{escapeHtml(formatChartTime(maxTime))}}</text>
+        </svg>
+        <div class="chart-legend">${{legend}}</div>
+      </article>`;
+    }}
+
+    function renderVmClusterMetricsPanel(item) {{
+      const metricWindow = metricWindowFor(item.id);
+      const record = metricRecordFor(item.id);
+      const data = record.data;
+      const interval = metricWindow.interval || "1h";
+      const status = record.loading
+        ? "Loading metrics"
+        : record.error
+          ? record.error
+          : data
+            ? `${{data.namespace || "oci_database_cluster"}} | ${{escapeHtml(data.interval || interval)}}`
+            : "Metrics pending";
+      const statusTone = record.error ? "critical" : "neutral";
+      const options = metricIntervals
+        .map(([value, label]) => intervalOption(value, label, interval))
+        .join("");
+      const charts = data && data.metrics
+        ? `${{renderMetricChart(data.metrics.CpuUtilization)}}${{renderMetricChart(data.metrics.MemoryUtilization)}}`
+        : `${{renderMetricChart({{ name: "CpuUtilization", display_name: "CPU Utilization", series: [] }})}}${{renderMetricChart({{ name: "MemoryUtilization", display_name: "Memory Utilization", series: [] }})}}`;
+      return `<section class="panel metrics-panel" data-metrics-cluster-id="${{escapeHtml(item.id)}}">
+        <div class="panel-header"><h3>CPU and Memory</h3><span>${{escapeHtml(item.region || "-")}}</span></div>
+        <div class="metric-controls">
+          <label class="metric-control"><span>Start</span><input class="metrics-start" type="datetime-local" step="3600" value="${{escapeHtml(toLocalInputValue(metricWindow.startIso))}}"></label>
+          <label class="metric-control"><span>End</span><input class="metrics-end" type="datetime-local" step="3600" value="${{escapeHtml(toLocalInputValue(metricWindow.endIso))}}"></label>
+          <label class="metric-control"><span>Interval</span><select class="metrics-interval">${{options}}</select></label>
+          <div class="metric-actions">
+            <button class="icon-button" type="button" data-metrics-action="prev-day" title="Previous day" aria-label="Previous day" ${{record.loading ? "disabled" : ""}}>${{icons.left}}</button>
+            <button class="icon-button" type="button" data-metrics-action="last-day" title="Last day" aria-label="Last day" ${{record.loading ? "disabled" : ""}}>${{icons.clock}}</button>
+            <button class="icon-button" type="button" data-metrics-action="next-day" title="Next day" aria-label="Next day" ${{record.loading ? "disabled" : ""}}>${{icons.right}}</button>
+            <button class="metric-apply-button" type="button" data-metrics-action="apply" ${{record.loading ? "disabled" : ""}}>${{icons.refresh}}<span>Apply</span></button>
+          </div>
+        </div>
+        <div class="metric-status" data-tone="${{statusTone}}">${{escapeHtml(status)}}</div>
+        <div class="chart-grid">${{charts}}</div>
+      </section>`;
+    }}
+
+    function applyMetricControls(container, item) {{
+      const startIso = fromLocalInputValue(container.querySelector(".metrics-start").value);
+      const endIso = fromLocalInputValue(container.querySelector(".metrics-end").value);
+      const interval = container.querySelector(".metrics-interval").value || "1h";
+      const record = metricRecordFor(item.id);
+      if (!startIso || !endIso || Date.parse(startIso) >= Date.parse(endIso)) {{
+        state.metricLoads[item.id] = {{
+          ...record,
+          loading: false,
+          error: "Start time must be before end time"
+        }};
+        render();
+        return;
+      }}
+      state.metricWindows[item.id] = {{ startIso, endIso, interval }};
+      loadVmClusterMetrics(item, true);
+    }}
+
+    function shiftMetricWindow(item, days) {{
+      const metricWindow = metricWindowFor(item.id);
+      const offset = days * dayMs;
+      state.metricWindows[item.id] = {{
+        ...metricWindow,
+        startIso: new Date(Date.parse(metricWindow.startIso) + offset).toISOString(),
+        endIso: new Date(Date.parse(metricWindow.endIso) + offset).toISOString()
+      }};
+      loadVmClusterMetrics(item, true);
+    }}
+
+    function setLastDayMetricWindow(item) {{
+      state.metricWindows[item.id] = defaultMetricWindow();
+      loadVmClusterMetrics(item, true);
     }}
 
     function metric(label, value, note) {{
@@ -1596,7 +2101,7 @@ def render_dashboard(inventory: Inventory) -> str:
         linkedResourceField("Infrastructure", infrastructure, "infrastructure"),
         detailField("OCID", item.id)
       ];
-      return `${{renderDetailHeader(item, "vm_cluster", fields)}}${{detailTable("DB Homes", compactDbHomeRows(homes), "<th>Name</th><th>Status</th><th>DB Version</th><th>Databases</th>", 4)}}${{detailTable("Databases", compactDatabaseRows(dbs), "<th>Name</th><th>Status</th><th>Unique Name</th><th>DB Home</th><th>PDBs</th>", 5)}}`;
+      return `${{renderDetailHeader(item, "vm_cluster", fields)}}${{renderVmClusterMetricsPanel(item)}}${{detailTable("DB Homes", compactDbHomeRows(homes), "<th>Name</th><th>Status</th><th>DB Version</th><th>Databases</th>", 4)}}${{detailTable("Databases", compactDatabaseRows(dbs), "<th>Name</th><th>Status</th><th>Unique Name</th><th>DB Home</th><th>PDBs</th>", 5)}}`;
     }}
 
     function renderDbHomeDetail(item) {{
@@ -1742,6 +2247,10 @@ def render_dashboard(inventory: Inventory) -> str:
       }} else {{
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{autonomousRows()}}`;
       }}
+
+      if (state.view === "detail" && state.detailType === "vm_cluster" && detailItem) {{
+        maybeLoadVmClusterMetrics(detailItem);
+      }}
     }}
 
     document.querySelectorAll(".tab").forEach((button) => {{
@@ -1774,6 +2283,23 @@ def render_dashboard(inventory: Inventory) -> str:
         state.detailType = "";
         state.detailId = "";
         render();
+        return;
+      }}
+      const metricsButton = event.target.closest("[data-metrics-action]");
+      if (metricsButton) {{
+        const container = metricsButton.closest("[data-metrics-cluster-id]");
+        const item = container ? findResource("vm_cluster", container.dataset.metricsClusterId || "") : null;
+        if (!item) return;
+        const action = metricsButton.dataset.metricsAction;
+        if (action === "apply") {{
+          applyMetricControls(container, item);
+        }} else if (action === "prev-day") {{
+          shiftMetricWindow(item, -1);
+        }} else if (action === "next-day") {{
+          shiftMetricWindow(item, 1);
+        }} else if (action === "last-day") {{
+          setLastDayMetricWindow(item);
+        }}
         return;
       }}
       const compartmentButton = event.target.closest("[data-compartment-path]");
