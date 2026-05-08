@@ -46,7 +46,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inventory.add_argument(
         "--resource",
-        choices=["infrastructures", "vm-clusters", "autonomous-vm-clusters", "versions"],
+        choices=[
+            "infrastructures",
+            "vm-clusters",
+            "autonomous-vm-clusters",
+            "db-homes",
+            "databases",
+            "pluggable-databases",
+            "versions",
+        ],
         default="vm-clusters",
         help="CSV resource view",
     )
@@ -184,6 +192,9 @@ def inventory_summary(inventory: Inventory) -> str:
         f"Infrastructures: {summary['infrastructure_count']}",
         f"VM clusters: {summary['vm_cluster_count']}",
         f"Autonomous VM clusters: {summary['autonomous_vm_cluster_count']}",
+        f"DB homes: {summary['db_home_count']}",
+        f"Databases: {summary['database_count']}",
+        f"Pluggable databases: {summary['pluggable_database_count']}",
         f"OCPU capacity: {summary['total_ocpus_enabled']} / {summary['total_ocpu_capacity']} ({summary['capacity_used_pct']}%)",
         f"Resources needing attention: {summary['attention_resources']}",
     ]
@@ -262,6 +273,98 @@ def inventory_csv(inventory: Inventory, resource: str) -> str:
                     item.system_version,
                 ]
             )
+    elif resource == "db-homes":
+        writer.writerow(
+            [
+                "Region",
+                "Compartment",
+                "Name",
+                "Status",
+                "DB Version",
+                "VM Cluster",
+                "OCID",
+            ]
+        )
+        for item in inventory.db_homes:
+            writer.writerow(
+                [
+                    item.region,
+                    item.compartment_path,
+                    item.display_name,
+                    item.lifecycle_state,
+                    item.db_version,
+                    item.vm_cluster_name,
+                    item.id,
+                ]
+            )
+    elif resource == "databases":
+        writer.writerow(
+            [
+                "Region",
+                "Compartment",
+                "Name",
+                "DB Name",
+                "DB Unique Name",
+                "Status",
+                "DB Home",
+                "VM Cluster",
+                "DB Workload",
+                "Patch Version",
+                "Character Set",
+                "NCharacter Set",
+                "OCID",
+            ]
+        )
+        for item in inventory.databases:
+            writer.writerow(
+                [
+                    item.region,
+                    item.compartment_path,
+                    item.display_name,
+                    item.db_name,
+                    item.db_unique_name,
+                    item.lifecycle_state,
+                    item.db_home_name,
+                    item.vm_cluster_name,
+                    item.db_workload,
+                    item.patch_version,
+                    item.character_set,
+                    item.ncharacter_set,
+                    item.id,
+                ]
+            )
+    elif resource == "pluggable-databases":
+        writer.writerow(
+            [
+                "Region",
+                "Compartment",
+                "PDB Name",
+                "Status",
+                "Open Mode",
+                "Restricted",
+                "Database",
+                "DB Home",
+                "VM Cluster",
+                "Patch Version",
+                "OCID",
+            ]
+        )
+        for item in inventory.pluggable_databases:
+            writer.writerow(
+                [
+                    item.region,
+                    item.compartment_path,
+                    item.pdb_name or item.display_name,
+                    item.lifecycle_state,
+                    item.open_mode,
+                    item.is_restricted,
+                    item.database_name,
+                    item.db_home_name,
+                    item.vm_cluster_name,
+                    item.patch_version,
+                    item.id,
+                ]
+            )
     else:
         writer.writerow(
             [
@@ -275,10 +378,22 @@ def inventory_csv(inventory: Inventory, resource: str) -> str:
                 "GI Version",
                 "Exadata Image Version",
                 "Infrastructure",
+                "DB Homes",
+                "Databases",
                 "OCID",
             ]
         )
         for item in inventory.vm_clusters:
+            db_homes = [
+                home.display_name
+                for home in inventory.db_homes
+                if home.vm_cluster_id == item.id
+            ]
+            databases = [
+                database.display_name
+                for database in inventory.databases
+                if database.vm_cluster_id == item.id
+            ]
             writer.writerow(
                 [
                     item.region,
@@ -291,6 +406,8 @@ def inventory_csv(inventory: Inventory, resource: str) -> str:
                     item.gi_version,
                     item.system_version,
                     item.exadata_infrastructure_name,
+                    "; ".join(db_homes),
+                    "; ".join(databases),
                     item.id,
                 ]
             )

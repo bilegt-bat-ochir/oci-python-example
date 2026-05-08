@@ -5,8 +5,11 @@ from datetime import datetime, timezone
 from .models import (
     AutonomousVmCluster,
     Compartment,
+    Database,
+    DbHome,
     ExadataInfrastructure,
     Inventory,
+    PluggableDatabase,
     VmCluster,
 )
 
@@ -30,6 +33,9 @@ def empty_inventory() -> Inventory:
         infrastructures=[],
         vm_clusters=[],
         autonomous_vm_clusters=[],
+        db_homes=[],
+        databases=[],
+        pluggable_databases=[],
     )
 
 
@@ -191,6 +197,149 @@ def sample_inventory() -> Inventory:
         )
     ]
 
+    db_homes = [
+        DbHome(
+            id="ocid1.dbhome.demo.home1",
+            region="uk-london-1",
+            compartment_id="ocid1.compartment.demo.cluster1",
+            compartment_path="ExaCC:production:billing",
+            display_name="billing-dbhome-19c",
+            lifecycle_state="AVAILABLE",
+            vm_cluster_id=vm_clusters[0].id,
+            vm_cluster_name=vm_clusters[0].display_name,
+            db_version="19.23.0.0.0",
+            db_home_location="/u01/app/oracle/product/19.0.0.0/dbhome_1",
+            time_created="2024-11-20T09:00:00+00:00",
+            console_url=(
+                f"https://console.{home_region}.oraclecloud.com/db/db-homes/"
+                f"ocid1.dbhome.demo.home1?tenant={tenant}&region=uk-london-1"
+            ),
+        ),
+        DbHome(
+            id="ocid1.dbhome.demo.home2",
+            region="uk-london-1",
+            compartment_id="ocid1.compartment.demo.cluster2",
+            compartment_path="ExaCC:production:warehouse",
+            display_name="warehouse-dbhome-19c",
+            lifecycle_state="AVAILABLE",
+            vm_cluster_id=vm_clusters[1].id,
+            vm_cluster_name=vm_clusters[1].display_name,
+            db_version="19.22.0.0.0",
+            db_home_location="/u01/app/oracle/product/19.0.0.0/dbhome_2",
+            time_created="2024-08-15T10:30:00+00:00",
+            console_url=(
+                f"https://console.{home_region}.oraclecloud.com/db/db-homes/"
+                f"ocid1.dbhome.demo.home2?tenant={tenant}&region=uk-london-1"
+            ),
+        ),
+    ]
+
+    databases = [
+        Database(
+            id="ocid1.database.demo.db1",
+            region="uk-london-1",
+            compartment_id="ocid1.compartment.demo.cluster1",
+            compartment_path="ExaCC:production:billing",
+            display_name="BILLING",
+            lifecycle_state="AVAILABLE",
+            db_home_id=db_homes[0].id,
+            db_home_name=db_homes[0].display_name,
+            vm_cluster_id=vm_clusters[0].id,
+            vm_cluster_name=vm_clusters[0].display_name,
+            db_name="BILLING",
+            db_unique_name="BILLING_uk1",
+            db_workload="OLTP",
+            time_created="2024-11-20T10:00:00+00:00",
+            last_backup_timestamp="2026-05-08T01:00:00+00:00",
+            patch_version="19.23.0.0.0",
+            is_cdb=True,
+            sid_prefix="BILL",
+            character_set="AL32UTF8",
+            ncharacter_set="AL16UTF16",
+            console_url=(
+                f"https://console.{home_region}.oraclecloud.com/db/databases/"
+                f"ocid1.database.demo.db1?tenant={tenant}&region=uk-london-1"
+            ),
+        ),
+        Database(
+            id="ocid1.database.demo.db2",
+            region="uk-london-1",
+            compartment_id="ocid1.compartment.demo.cluster2",
+            compartment_path="ExaCC:production:warehouse",
+            display_name="WAREHOUSE",
+            lifecycle_state="AVAILABLE",
+            db_home_id=db_homes[1].id,
+            db_home_name=db_homes[1].display_name,
+            vm_cluster_id=vm_clusters[1].id,
+            vm_cluster_name=vm_clusters[1].display_name,
+            db_name="WAREHOUSE",
+            db_unique_name="WAREHOUSE_uk1",
+            db_workload="DW",
+            time_created="2024-08-15T11:15:00+00:00",
+            last_backup_timestamp="2026-05-08T02:30:00+00:00",
+            patch_version="19.22.0.0.0",
+            is_cdb=True,
+            sid_prefix="WH",
+            character_set="AL32UTF8",
+            ncharacter_set="AL16UTF16",
+            console_url=(
+                f"https://console.{home_region}.oraclecloud.com/db/databases/"
+                f"ocid1.database.demo.db2?tenant={tenant}&region=uk-london-1"
+            ),
+        ),
+    ]
+
+    pluggable_databases = [
+        PluggableDatabase(
+            id="ocid1.pluggabledatabase.demo.pdb1",
+            region="uk-london-1",
+            compartment_id="ocid1.compartment.demo.cluster1",
+            compartment_path="ExaCC:production:billing",
+            display_name="BILLINGPDB",
+            lifecycle_state="AVAILABLE",
+            database_id=databases[0].id,
+            database_name=databases[0].display_name,
+            db_home_id=db_homes[0].id,
+            db_home_name=db_homes[0].display_name,
+            vm_cluster_id=vm_clusters[0].id,
+            vm_cluster_name=vm_clusters[0].display_name,
+            pdb_name="BILLINGPDB",
+            open_mode="READ_WRITE",
+            is_restricted=False,
+            time_created="2024-11-20T10:45:00+00:00",
+            patch_version="19.23.0.0.0",
+            console_url=(
+                f"https://console.{home_region}.oraclecloud.com/db/"
+                f"pluggable-databases/ocid1.pluggabledatabase.demo.pdb1"
+                f"?tenant={tenant}&region=uk-london-1"
+            ),
+        ),
+        PluggableDatabase(
+            id="ocid1.pluggabledatabase.demo.pdb2",
+            region="uk-london-1",
+            compartment_id="ocid1.compartment.demo.cluster2",
+            compartment_path="ExaCC:production:warehouse",
+            display_name="WAREHOUSEPDB",
+            lifecycle_state="AVAILABLE",
+            database_id=databases[1].id,
+            database_name=databases[1].display_name,
+            db_home_id=db_homes[1].id,
+            db_home_name=db_homes[1].display_name,
+            vm_cluster_id=vm_clusters[1].id,
+            vm_cluster_name=vm_clusters[1].display_name,
+            pdb_name="WAREHOUSEPDB",
+            open_mode="READ_WRITE",
+            is_restricted=False,
+            time_created="2024-08-15T11:50:00+00:00",
+            patch_version="19.22.0.0.0",
+            console_url=(
+                f"https://console.{home_region}.oraclecloud.com/db/"
+                f"pluggable-databases/ocid1.pluggabledatabase.demo.pdb2"
+                f"?tenant={tenant}&region=uk-london-1"
+            ),
+        ),
+    ]
+
     return Inventory(
         tenant_name=tenant,
         home_region=home_region,
@@ -200,4 +349,7 @@ def sample_inventory() -> Inventory:
         infrastructures=infrastructures,
         vm_clusters=vm_clusters,
         autonomous_vm_clusters=autonomous,
+        db_homes=db_homes,
+        databases=databases,
+        pluggable_databases=pluggable_databases,
     )

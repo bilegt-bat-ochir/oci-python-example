@@ -451,6 +451,54 @@ def render_dashboard(inventory: Inventory) -> str:
       min-width: 220px;
     }}
 
+    .resource-title {{
+      display: inline-grid;
+      grid-template-columns: 24px minmax(0, auto);
+      gap: 7px;
+      align-items: center;
+      max-width: 100%;
+    }}
+
+    .console-link {{
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--blue);
+      display: inline-grid;
+      place-items: center;
+      background: #ffffff;
+      flex: 0 0 24px;
+    }}
+
+    .console-link:hover {{
+      border-color: #a9bbd9;
+      background: #eef4ff;
+      text-decoration: none;
+    }}
+
+    .console-link .icon {{
+      width: 14px;
+      height: 14px;
+    }}
+
+    .resource-name-button {{
+      border: 0;
+      background: transparent;
+      color: var(--blue);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 800;
+      min-width: 0;
+      padding: 0;
+      text-align: left;
+      overflow-wrap: anywhere;
+    }}
+
+    .resource-name-button:hover {{
+      text-decoration: underline;
+    }}
+
     .muted {{
       color: var(--muted);
     }}
@@ -633,6 +681,99 @@ def render_dashboard(inventory: Inventory) -> str:
       white-space: nowrap;
     }}
 
+    .detail-hero {{
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }}
+
+    .detail-title-row {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }}
+
+    .detail-title {{
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }}
+
+    .detail-title h3 {{
+      font-size: 22px;
+      line-height: 1.2;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }}
+
+    .detail-actions {{
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex-wrap: wrap;
+    }}
+
+    .back-button {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      color: var(--ink);
+      cursor: pointer;
+      min-height: 34px;
+      padding: 0 11px;
+      font: inherit;
+      font-weight: 800;
+    }}
+
+    .back-button:hover {{
+      border-color: var(--line-strong);
+      box-shadow: 0 2px 8px rgba(16, 24, 40, 0.08);
+    }}
+
+    .detail-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }}
+
+    .detail-field {{
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }}
+
+    .detail-field span {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }}
+
+    .detail-field strong {{
+      color: var(--ink);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }}
+
+    .stack-list {{
+      display: grid;
+      gap: 7px;
+      min-width: 180px;
+    }}
+
+    .stack-item {{
+      display: grid;
+      gap: 3px;
+    }}
+
+    .stack-item small {{
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }}
+
     .capacity-list {{
       display: grid;
       gap: 14px;
@@ -688,11 +829,15 @@ def render_dashboard(inventory: Inventory) -> str:
       .compartment-layout {{
         grid-template-columns: 1fr;
       }}
+      .detail-grid {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
     }}
 
     @media (max-width: 560px) {{
       .content, .topbar {{ padding: 16px; }}
       .metrics {{ grid-template-columns: 1fr; }}
+      .detail-grid {{ grid-template-columns: 1fr; }}
       .brand h1 {{ font-size: 15px; }}
       .headline h2 {{ font-size: 22px; }}
     }}
@@ -725,6 +870,14 @@ def render_dashboard(inventory: Inventory) -> str:
         <button class="tab" type="button" data-view="vm_clusters" aria-selected="false">
           <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6"></rect><rect x="3" y="14" width="18" height="6"></rect><path d="M7 7h.01"></path><path d="M7 17h.01"></path></svg>
           <span>VM Clusters</span><span class="count" id="vmCount"></span>
+        </button>
+        <button class="tab" type="button" data-view="db_homes" aria-selected="false">
+          <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6c0 1.7 3.6 3 8 3s8-1.3 8-3-3.6-3-8-3-8 1.3-8 3z"></path><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6"></path><path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"></path></svg>
+          <span>DB Homes</span><span class="count" id="dbHomeCount"></span>
+        </button>
+        <button class="tab" type="button" data-view="databases" aria-selected="false">
+          <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path></svg>
+          <span>Databases</span><span class="count" id="databaseCount"></span>
         </button>
         <button class="tab" type="button" data-view="autonomous_vm_clusters" aria-selected="false">
           <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l8 4v6c0 4.5-3.2 7.4-8 8-4.8-.6-8-3.5-8-8V7l8-4z"></path><path d="M9 12l2 2 4-5"></path></svg>
@@ -780,7 +933,15 @@ def render_dashboard(inventory: Inventory) -> str:
   <script>
     let inventory = normalizeInventory(JSON.parse(document.getElementById("inventory-data").textContent));
     let summary = inventory.summary || {{}};
-    const state = {{ view: "overview", query: "", loading: false, compartmentPath: "root" }};
+    const state = {{
+      view: "overview",
+      query: "",
+      loading: false,
+      compartmentPath: "root",
+      detailType: "",
+      detailId: "",
+      detailFromView: "overview"
+    }};
 
     const icons = {{
       open: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M7 17L17 7"></path><path d="M8 7h9v9"></path></svg>'
@@ -806,6 +967,9 @@ def render_dashboard(inventory: Inventory) -> str:
         infrastructures: data.infrastructures || [],
         vm_clusters: data.vm_clusters || [],
         autonomous_vm_clusters: data.autonomous_vm_clusters || [],
+        db_homes: data.db_homes || [],
+        databases: data.databases || [],
+        pluggable_databases: data.pluggable_databases || [],
         summary: data.summary || {{}}
       }};
     }}
@@ -814,6 +978,10 @@ def render_dashboard(inventory: Inventory) -> str:
       inventory = normalizeInventory(nextInventory);
       summary = inventory.summary || {{}};
       state.compartmentPath = "root";
+      state.detailType = "";
+      state.detailId = "";
+      state.detailFromView = "overview";
+      state.view = state.view === "detail" ? "overview" : state.view;
       document.title = `ExaCC Operations - ${{inventory.tenant_name || "Inventory"}}`;
       setCounts();
       render();
@@ -822,8 +990,12 @@ def render_dashboard(inventory: Inventory) -> str:
     function statusTone(status) {{
       const normalized = String(status || "").toUpperCase();
       if (["ACTIVE", "AVAILABLE"].includes(normalized)) return "healthy";
-      if (["PROVISIONING", "UPDATING", "TERMINATING", "MAINTENANCE_IN_PROGRESS", "SCALE_IN_PROGRESS", "BACKUP_IN_PROGRESS"].includes(normalized)) return "attention";
-      if (["FAILED", "INACTIVE", "REQUIRES_ACTIVATION", "TERMINATED", "UNAVAILABLE"].includes(normalized)) return "critical";
+      if ([
+        "PROVISIONING", "UPDATING", "TERMINATING", "MAINTENANCE_IN_PROGRESS",
+        "SCALE_IN_PROGRESS", "BACKUP_IN_PROGRESS", "UPGRADING", "CONVERTING",
+        "REFRESHING", "RELOCATING", "RELOCATED", "RESTORE_IN_PROGRESS", "DISABLED"
+      ].includes(normalized)) return "attention";
+      if (["FAILED", "INACTIVE", "REQUIRES_ACTIVATION", "TERMINATED", "UNAVAILABLE", "RESTORE_FAILED"].includes(normalized)) return "critical";
       return "neutral";
     }}
 
@@ -832,13 +1004,18 @@ def render_dashboard(inventory: Inventory) -> str:
       return `<span class="pill ${{statusTone(status)}}">${{value}}</span>`;
     }}
 
-    function resourceLink(item) {{
-      if (!item.console_url) return escapeHtml(item.display_name || item.id);
-      return `<a href="${{escapeHtml(item.console_url)}}" target="_blank" rel="noreferrer">${{escapeHtml(item.display_name || item.id)}}</a>`;
+    function consoleLink(item) {{
+      if (!item.console_url) return "";
+      const label = escapeHtml(`Open ${{item.display_name || item.id}} in OCI Console`);
+      return `<a class="console-link" href="${{escapeHtml(item.console_url)}}" target="_blank" rel="noreferrer" title="${{label}}" aria-label="${{label}}">${{icons.open}}</a>`;
     }}
 
-    function nameCell(item) {{
-      return `<div class="name-cell"><strong>${{resourceLink(item)}}</strong><span class="ocid" title="${{escapeHtml(item.id)}}">${{escapeHtml(item.id)}}</span></div>`;
+    function resourceTitle(item, resourceType) {{
+      return `<span class="resource-title">${{consoleLink(item)}}<button class="resource-name-button" type="button" data-detail-type="${{escapeHtml(resourceType)}}" data-detail-id="${{escapeHtml(item.id)}}">${{escapeHtml(item.display_name || item.pdb_name || item.id)}}</button></span>`;
+    }}
+
+    function nameCell(item, resourceType) {{
+      return `<div class="name-cell"><strong>${{resourceTitle(item, resourceType)}}</strong><span class="ocid" title="${{escapeHtml(item.id)}}">${{escapeHtml(item.id)}}</span></div>`;
     }}
 
     function matchesQuery(item) {{
@@ -846,7 +1023,10 @@ def render_dashboard(inventory: Inventory) -> str:
       const haystack = [
         item.display_name, item.id, item.region, item.compartment_path,
         item.lifecycle_state, item.shape, item.exadata_infrastructure_name,
-        item.gi_version, item.system_version
+        item.gi_version, item.system_version, item.vm_cluster_name,
+        item.db_home_name, item.db_name, item.db_unique_name, item.db_version,
+        item.db_workload, item.patch_version, item.pdb_name, item.open_mode,
+        item.database_name
       ].join(" ").toLowerCase();
       return haystack.includes(state.query);
     }}
@@ -864,9 +1044,12 @@ def render_dashboard(inventory: Inventory) -> str:
 
     function allResources() {{
       return [
-        ...inventory.infrastructures.map((item) => ({{ ...item, kind: "Infrastructure" }})),
-        ...inventory.vm_clusters.map((item) => ({{ ...item, kind: "VM Cluster" }})),
-        ...inventory.autonomous_vm_clusters.map((item) => ({{ ...item, kind: "Autonomous VM Cluster" }}))
+        ...inventory.infrastructures.map((item) => ({{ ...item, kind: "Infrastructure", resource_type: "infrastructure" }})),
+        ...inventory.vm_clusters.map((item) => ({{ ...item, kind: "VM Cluster", resource_type: "vm_cluster" }})),
+        ...inventory.autonomous_vm_clusters.map((item) => ({{ ...item, kind: "Autonomous VM Cluster", resource_type: "autonomous_vm_cluster" }})),
+        ...inventory.db_homes.map((item) => ({{ ...item, kind: "DB Home", resource_type: "db_home" }})),
+        ...inventory.databases.map((item) => ({{ ...item, kind: "Database", resource_type: "database" }})),
+        ...inventory.pluggable_databases.map((item) => ({{ ...item, kind: "Pluggable Database", resource_type: "pluggable_database" }}))
       ];
     }}
 
@@ -878,7 +1061,10 @@ def render_dashboard(inventory: Inventory) -> str:
       const infra = inventory.infrastructures.filter(matchesCompartment);
       const vms = inventory.vm_clusters.filter(matchesCompartment);
       const autonomous = inventory.autonomous_vm_clusters.filter(matchesCompartment);
-      const resources = [...infra, ...vms, ...autonomous];
+      const dbHomes = inventory.db_homes.filter(matchesCompartment);
+      const databases = inventory.databases.filter(matchesCompartment);
+      const pdbs = inventory.pluggable_databases.filter(matchesCompartment);
+      const resources = [...infra, ...vms, ...autonomous, ...dbHomes, ...databases, ...pdbs];
       const healthy = resources.filter((item) => statusTone(item.lifecycle_state) === "healthy").length;
       const ocpus = infra.reduce((total, item) => total + (item.cpus_enabled || 0), 0);
       const capacity = infra.reduce((total, item) => total + (item.max_cpu_count || 0), 0);
@@ -891,7 +1077,10 @@ def render_dashboard(inventory: Inventory) -> str:
         capacity,
         capacityPct: capacity ? Math.round((ocpus / capacity) * 1000) / 10 : 0,
         memory: vms.reduce((total, item) => total + (item.memory_size_in_gbs || 0), 0),
-        clusters: vms.length + autonomous.length
+        clusters: vms.length + autonomous.length,
+        dbHomes: dbHomes.length,
+        databases: databases.length,
+        pdbs: pdbs.length
       }};
     }}
 
@@ -965,6 +1154,8 @@ def render_dashboard(inventory: Inventory) -> str:
       document.getElementById("compartmentCount").textContent = number(compartmentsForUI().length);
       document.getElementById("infraCount").textContent = number(inventory.infrastructures.length);
       document.getElementById("vmCount").textContent = number(inventory.vm_clusters.length);
+      document.getElementById("dbHomeCount").textContent = number(inventory.db_homes.length);
+      document.getElementById("databaseCount").textContent = number(inventory.databases.length);
       document.getElementById("autoCount").textContent = number(inventory.autonomous_vm_clusters.length);
     }}
 
@@ -1065,7 +1256,7 @@ def render_dashboard(inventory: Inventory) -> str:
         ${{metric("Resources", number(current.resources), `${{number(current.healthy)}} healthy, ${{number(current.attention)}} need attention`)}}
         ${{metric("Regions", number(current.regions), escapeHtml((inventory.regions || []).join(", ")) || "No regions")}}
         ${{metric("OCPU Capacity", `${{number(current.ocpus)}} / ${{number(current.capacity)}}`, `${{current.capacityPct || 0}}% enabled`)}}
-        ${{metric("VM Memory", `${{number(current.memory)}} GB`, `${{number(current.clusters)}} total clusters`)}}
+        ${{metric("Data Stores", number(current.databases), `${{number(current.dbHomes)}} DB homes, ${{number(current.pdbs)}} PDBs`)}}
       </div>`;
     }}
 
@@ -1073,7 +1264,7 @@ def render_dashboard(inventory: Inventory) -> str:
       const rows = visibleItems(inventory.infrastructures).map((item) => {{
         const used = item.max_cpu_count ? Math.min(100, (item.cpus_enabled / item.max_cpu_count) * 100) : 0;
         return `<div class="capacity-row">
-          <div class="capacity-line"><strong>${{resourceLink(item)}}</strong><span>${{number(item.cpus_enabled)}} / ${{number(item.max_cpu_count)}} OCPUs</span></div>
+          <div class="capacity-line"><strong>${{resourceTitle(item, "infrastructure")}}</strong><span>${{number(item.cpus_enabled)}} / ${{number(item.max_cpu_count)}} OCPUs</span></div>
           <div class="bar" aria-hidden="true"><span style="width: ${{used}}%"></span></div>
         </div>`;
       }}).join("");
@@ -1084,14 +1275,11 @@ def render_dashboard(inventory: Inventory) -> str:
     }}
 
     function renderStatusPanel() {{
-      const resources = [
-        ...inventory.infrastructures.map((item) => ({{ ...item, kind: "Infrastructure" }})),
-        ...inventory.vm_clusters.map((item) => ({{ ...item, kind: "VM Cluster" }})),
-        ...inventory.autonomous_vm_clusters.map((item) => ({{ ...item, kind: "Autonomous VM Cluster" }}))
-      ].filter((item) => matchesCompartment(item) && matchesQuery(item) && statusTone(item.lifecycle_state) !== "healthy");
+      const resources = allResources()
+        .filter((item) => matchesCompartment(item) && matchesQuery(item) && statusTone(item.lifecycle_state) !== "healthy");
 
       const rows = resources.map((item) => `<tr>
-        <td>${{nameCell(item)}}</td>
+        <td>${{nameCell(item, item.resource_type)}}</td>
         <td>${{escapeHtml(item.kind)}}</td>
         <td>${{escapeHtml(item.region)}}</td>
         <td>${{pill(item.lifecycle_state)}}</td>
@@ -1133,7 +1321,7 @@ def render_dashboard(inventory: Inventory) -> str:
       const resources = scopedResources().filter(matchesQuery);
       const resourceRows = resources.map((item) => `<div class="resource-row">
         <div>
-          <strong>${{resourceLink(item)}}</strong>
+          <strong>${{resourceTitle(item, item.resource_type)}}</strong>
           <div class="muted">${{escapeHtml(item.compartment_path || "root")}} - ${{escapeHtml(item.region || "-")}}</div>
         </div>
         <div>
@@ -1158,7 +1346,7 @@ def render_dashboard(inventory: Inventory) -> str:
       const rows = visibleItems(inventory.infrastructures).map((item) => {{
         const used = item.max_cpu_count ? Math.min(100, (item.cpus_enabled / item.max_cpu_count) * 100) : 0;
         return `<tr>
-          <td>${{nameCell(item)}}</td>
+          <td>${{nameCell(item, "infrastructure")}}</td>
           <td>${{escapeHtml(item.region)}}</td>
           <td>${{escapeHtml(item.compartment_path)}}</td>
           <td>${{escapeHtml(item.shape)}}</td>
@@ -1170,25 +1358,92 @@ def render_dashboard(inventory: Inventory) -> str:
       return tablePanel("Infrastructure", rows, "<th>Name</th><th>Region</th><th>Compartment</th><th>Shape</th><th>Compute / Storage</th><th>OCPUs</th><th>Status</th>", 7);
     }}
 
+    function dbHomesForVmCluster(vmClusterId) {{
+      return inventory.db_homes.filter((item) => item.vm_cluster_id === vmClusterId);
+    }}
+
+    function databasesForVmCluster(vmClusterId) {{
+      return inventory.databases.filter((item) => item.vm_cluster_id === vmClusterId);
+    }}
+
+    function databasesForDbHome(dbHomeId) {{
+      return inventory.databases.filter((item) => item.db_home_id === dbHomeId);
+    }}
+
+    function pluggableDatabasesForDatabase(databaseId) {{
+      return inventory.pluggable_databases.filter((item) => item.database_id === databaseId);
+    }}
+
+    function stackList(items, emptyLabel, detailFn, resourceType) {{
+      if (!items.length) return `<span class="muted">${{emptyLabel}}</span>`;
+      return `<div class="stack-list">${{items.map((item) => `<div class="stack-item">
+        <strong>${{resourceTitle(item, resourceType)}}</strong>
+        <small>${{escapeHtml(detailFn(item))}}</small>
+      </div>`).join("")}}</div>`;
+    }}
+
+    function vmClusterMatchesQuery(item) {{
+      if (!state.query) return true;
+      return matchesQuery(item)
+        || dbHomesForVmCluster(item.id).some(matchesQuery)
+        || databasesForVmCluster(item.id).some(matchesQuery);
+    }}
+
     function vmRows() {{
-      const rows = visibleItems(inventory.vm_clusters).map((item) => `<tr>
-        <td>${{nameCell(item)}}</td>
+      const rows = inventory.vm_clusters
+        .filter((item) => matchesCompartment(item) && vmClusterMatchesQuery(item))
+        .map((item) => {{
+          const clusterMatched = matchesQuery(item);
+          const homes = dbHomesForVmCluster(item.id).filter((home) => clusterMatched || matchesQuery(home));
+          const dbs = databasesForVmCluster(item.id).filter((database) => clusterMatched || matchesQuery(database));
+          return `<tr>
+          <td>${{nameCell(item, "vm_cluster")}}</td>
+          <td>${{escapeHtml(item.region)}}</td>
+          <td>${{escapeHtml(item.compartment_path)}}</td>
+          <td>${{pill(item.lifecycle_state)}}</td>
+          <td>${{number(item.db_node_count)}}</td>
+          <td>${{number(item.cpus_enabled)}}</td>
+          <td>${{number(item.memory_size_in_gbs)}} GB</td>
+          <td>${{escapeHtml(item.gi_version || "-")}}</td>
+          <td>${{stackList(homes, "No DB homes", (home) => `${{home.lifecycle_state || "UNKNOWN"}} - ${{home.db_version || "-"}}`, "db_home")}}</td>
+          <td>${{stackList(dbs, "No databases", (database) => `${{database.lifecycle_state || "UNKNOWN"}} - ${{database.db_unique_name || database.db_name || "-"}}`, "database")}}</td>
+          <td>${{escapeHtml(item.exadata_infrastructure_name || "-")}}</td>
+        </tr>`;
+      }}).join("");
+      return tablePanel("VM Clusters", rows, "<th>Name</th><th>Region</th><th>Compartment</th><th>Status</th><th>DB Nodes</th><th>OCPUs</th><th>Memory</th><th>GI</th><th>DB Homes</th><th>Databases</th><th>Infrastructure</th>", 11);
+    }}
+
+    function dbHomeRows() {{
+      const rows = visibleItems(inventory.db_homes).map((item) => `<tr>
+        <td>${{nameCell(item, "db_home")}}</td>
         <td>${{escapeHtml(item.region)}}</td>
         <td>${{escapeHtml(item.compartment_path)}}</td>
         <td>${{pill(item.lifecycle_state)}}</td>
-        <td>${{number(item.db_node_count)}}</td>
-        <td>${{number(item.cpus_enabled)}}</td>
-        <td>${{number(item.memory_size_in_gbs)}} GB</td>
-        <td>${{escapeHtml(item.gi_version || "-")}}</td>
-        <td>${{escapeHtml(item.system_version || "-")}}</td>
-        <td>${{escapeHtml(item.exadata_infrastructure_name || "-")}}</td>
+        <td>${{escapeHtml(item.db_version || "-")}}</td>
+        <td>${{number(databasesForDbHome(item.id).length)}}</td>
+        <td>${{escapeHtml(item.vm_cluster_name || "-")}}</td>
       </tr>`).join("");
-      return tablePanel("VM Clusters", rows, "<th>Name</th><th>Region</th><th>Compartment</th><th>Status</th><th>DB Nodes</th><th>OCPUs</th><th>Memory</th><th>GI</th><th>Image</th><th>Infrastructure</th>", 10);
+      return tablePanel("DB Homes", rows, "<th>Name</th><th>Region</th><th>Compartment</th><th>Status</th><th>DB Version</th><th>Databases</th><th>VM Cluster</th>", 7);
+    }}
+
+    function databaseRows() {{
+      const rows = visibleItems(inventory.databases).map((item) => `<tr>
+        <td>${{nameCell(item, "database")}}</td>
+        <td>${{escapeHtml(item.region)}}</td>
+        <td>${{escapeHtml(item.compartment_path)}}</td>
+        <td>${{pill(item.lifecycle_state)}}</td>
+        <td>${{escapeHtml(item.db_unique_name || item.db_name || "-")}}</td>
+        <td>${{escapeHtml(item.db_home_name || "-")}}</td>
+        <td>${{escapeHtml(item.vm_cluster_name || "-")}}</td>
+        <td>${{number(pluggableDatabasesForDatabase(item.id).length)}}</td>
+        <td>${{escapeHtml(item.character_set || "-")}}</td>
+      </tr>`).join("");
+      return tablePanel("Databases", rows, "<th>Name</th><th>Region</th><th>Compartment</th><th>Status</th><th>Unique Name</th><th>DB Home</th><th>VM Cluster</th><th>PDBs</th><th>Character Set</th>", 9);
     }}
 
     function autonomousRows() {{
       const rows = visibleItems(inventory.autonomous_vm_clusters).map((item) => `<tr>
-        <td>${{nameCell(item)}}</td>
+        <td>${{nameCell(item, "autonomous_vm_cluster")}}</td>
         <td>${{escapeHtml(item.region)}}</td>
         <td>${{escapeHtml(item.compartment_path)}}</td>
         <td>${{pill(item.lifecycle_state)}}</td>
@@ -1196,6 +1451,247 @@ def render_dashboard(inventory: Inventory) -> str:
         <td>${{escapeHtml(item.exadata_infrastructure_name || "-")}}</td>
       </tr>`).join("");
       return tablePanel("Autonomous VM Clusters", rows, "<th>Name</th><th>Region</th><th>Compartment</th><th>Status</th><th>OCPUs</th><th>Infrastructure</th>", 6);
+    }}
+
+    function resourceSet(resourceType) {{
+      const sources = {{
+        infrastructure: inventory.infrastructures,
+        vm_cluster: inventory.vm_clusters,
+        autonomous_vm_cluster: inventory.autonomous_vm_clusters,
+        db_home: inventory.db_homes,
+        database: inventory.databases,
+        pluggable_database: inventory.pluggable_databases
+      }};
+      return sources[resourceType] || [];
+    }}
+
+    function findResource(resourceType, resourceId) {{
+      return resourceSet(resourceType).find((item) => item.id === resourceId);
+    }}
+
+    function resourceLabel(resourceType) {{
+      const labels = {{
+        infrastructure: "Infrastructure",
+        vm_cluster: "VM Cluster",
+        autonomous_vm_cluster: "Autonomous VM Cluster",
+        db_home: "DB Home",
+        database: "Database",
+        pluggable_database: "Pluggable Database"
+      }};
+      return labels[resourceType] || "Resource";
+    }}
+
+    function formatValue(value) {{
+      if (value === true) return "Yes";
+      if (value === false) return "No";
+      if (value === null || value === undefined || value === "") return "-";
+      return String(value);
+    }}
+
+    function detailField(label, value) {{
+      return `<div class="detail-field"><span>${{escapeHtml(label)}}</span><strong>${{escapeHtml(formatValue(value))}}</strong></div>`;
+    }}
+
+    function detailFieldHtml(label, html) {{
+      return `<div class="detail-field"><span>${{escapeHtml(label)}}</span><strong>${{html || "-"}}</strong></div>`;
+    }}
+
+    function linkedResourceField(label, item, resourceType) {{
+      return item
+        ? detailFieldHtml(label, resourceTitle(item, resourceType))
+        : detailField(label, "-");
+    }}
+
+    function renderDetailHeader(item, resourceType, fields) {{
+      const fromView = state.detailFromView || "overview";
+      return `<section class="panel">
+        <div class="detail-hero">
+          <div class="detail-title-row">
+            <div class="detail-title">
+              <div class="resource-kind">${{escapeHtml(resourceLabel(resourceType))}}</div>
+              <h3>${{escapeHtml(item.display_name || item.pdb_name || item.id)}}</h3>
+              <div>${{pill(item.lifecycle_state)}}</div>
+            </div>
+            <div class="detail-actions">
+              <button class="back-button" type="button" data-back-view="${{escapeHtml(fromView)}}">Back</button>
+              ${{consoleLink(item)}}
+            </div>
+          </div>
+          <div class="detail-grid">${{fields.join("")}}</div>
+        </div>
+      </section>`;
+    }}
+
+    function compactDbHomeRows(items) {{
+      return items.map((item) => `<tr>
+        <td>${{nameCell(item, "db_home")}}</td>
+        <td>${{pill(item.lifecycle_state)}}</td>
+        <td>${{escapeHtml(item.db_version || "-")}}</td>
+        <td>${{number(databasesForDbHome(item.id).length)}}</td>
+      </tr>`).join("");
+    }}
+
+    function compactDatabaseRows(items) {{
+      return items.map((item) => `<tr>
+        <td>${{nameCell(item, "database")}}</td>
+        <td>${{pill(item.lifecycle_state)}}</td>
+        <td>${{escapeHtml(item.db_unique_name || item.db_name || "-")}}</td>
+        <td>${{escapeHtml(item.db_home_name || "-")}}</td>
+        <td>${{number(pluggableDatabasesForDatabase(item.id).length)}}</td>
+      </tr>`).join("");
+    }}
+
+    function compactPluggableRows(items) {{
+      return items.map((item) => `<tr>
+        <td>${{nameCell(item, "pluggable_database")}}</td>
+        <td>${{pill(item.lifecycle_state)}}</td>
+        <td>${{escapeHtml(item.open_mode || "-")}}</td>
+        <td>${{escapeHtml(formatValue(item.is_restricted))}}</td>
+        <td>${{escapeHtml(item.patch_version || "-")}}</td>
+      </tr>`).join("");
+    }}
+
+    function compactVmClusterRows(items) {{
+      return items.map((item) => `<tr>
+        <td>${{nameCell(item, "vm_cluster")}}</td>
+        <td>${{pill(item.lifecycle_state)}}</td>
+        <td>${{number(item.db_node_count)}}</td>
+        <td>${{number(item.cpus_enabled)}}</td>
+        <td>${{number(dbHomesForVmCluster(item.id).length)}}</td>
+        <td>${{number(databasesForVmCluster(item.id).length)}}</td>
+      </tr>`).join("");
+    }}
+
+    function detailTable(title, rows, header, colspan) {{
+      return tablePanel(title, rows, header, colspan);
+    }}
+
+    function renderInfrastructureDetail(item) {{
+      const fields = [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("Shape", item.shape),
+        detailField("Compute Nodes", item.compute_count),
+        detailField("Storage Nodes", item.storage_count),
+        detailField("OCPU Capacity", `${{number(item.cpus_enabled)}} / ${{number(item.max_cpu_count)}}`),
+        detailField("OCID", item.id)
+      ];
+      const clusters = inventory.vm_clusters.filter((cluster) => cluster.exadata_infrastructure_id === item.id);
+      const autonomous = inventory.autonomous_vm_clusters.filter((cluster) => cluster.exadata_infrastructure_id === item.id);
+      return `${{renderDetailHeader(item, "infrastructure", fields)}}${{detailTable("VM Clusters", compactVmClusterRows(clusters), "<th>Name</th><th>Status</th><th>DB Nodes</th><th>OCPUs</th><th>DB Homes</th><th>Databases</th>", 6)}}${{detailTable("Autonomous VM Clusters", autonomous.map((cluster) => `<tr><td>${{nameCell(cluster, "autonomous_vm_cluster")}}</td><td>${{pill(cluster.lifecycle_state)}}</td><td>${{number(cluster.cpus_enabled)}}</td></tr>`).join(""), "<th>Name</th><th>Status</th><th>OCPUs</th>", 3)}}`;
+    }}
+
+    function renderVmClusterDetail(item) {{
+      const infrastructure = findResource("infrastructure", item.exadata_infrastructure_id);
+      const homes = dbHomesForVmCluster(item.id);
+      const dbs = databasesForVmCluster(item.id);
+      const fields = [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("DB Nodes", item.db_node_count),
+        detailField("OCPUs", item.cpus_enabled),
+        detailField("Memory", `${{number(item.memory_size_in_gbs)}} GB`),
+        detailField("GI Version", item.gi_version),
+        detailField("System Version", item.system_version),
+        linkedResourceField("Infrastructure", infrastructure, "infrastructure"),
+        detailField("OCID", item.id)
+      ];
+      return `${{renderDetailHeader(item, "vm_cluster", fields)}}${{detailTable("DB Homes", compactDbHomeRows(homes), "<th>Name</th><th>Status</th><th>DB Version</th><th>Databases</th>", 4)}}${{detailTable("Databases", compactDatabaseRows(dbs), "<th>Name</th><th>Status</th><th>Unique Name</th><th>DB Home</th><th>PDBs</th>", 5)}}`;
+    }}
+
+    function renderDbHomeDetail(item) {{
+      const cluster = findResource("vm_cluster", item.vm_cluster_id);
+      const dbs = databasesForDbHome(item.id);
+      const fields = [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("DB Version", item.db_version),
+        detailField("Location", item.db_home_location),
+        detailField("Created", item.time_created),
+        detailField("Lifecycle Details", item.lifecycle_details),
+        linkedResourceField("VM Cluster", cluster, "vm_cluster"),
+        detailField("Software Image", item.database_software_image_id),
+        detailField("Last Patch", item.last_patch_history_entry_id),
+        detailField("OCID", item.id)
+      ];
+      return `${{renderDetailHeader(item, "db_home", fields)}}${{detailTable("Databases", compactDatabaseRows(dbs), "<th>Name</th><th>Status</th><th>Unique Name</th><th>DB Home</th><th>PDBs</th>", 5)}}`;
+    }}
+
+    function renderDatabaseDetail(item) {{
+      const home = findResource("db_home", item.db_home_id);
+      const cluster = findResource("vm_cluster", item.vm_cluster_id);
+      const pdbs = pluggableDatabasesForDatabase(item.id);
+      const fields = [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("DB Name", item.db_name),
+        detailField("Unique Name", item.db_unique_name),
+        detailField("Workload", item.db_workload),
+        detailField("CDB", item.is_cdb),
+        detailField("SID Prefix", item.sid_prefix),
+        detailField("Patch Version", item.patch_version),
+        detailField("Character Set", item.character_set),
+        detailField("NCharacter Set", item.ncharacter_set),
+        detailField("Created", item.time_created),
+        detailField("Last Backup", item.last_backup_timestamp),
+        detailField("Lifecycle Details", item.lifecycle_details),
+        linkedResourceField("DB Home", home, "db_home"),
+        linkedResourceField("VM Cluster", cluster, "vm_cluster"),
+        detailField("Software Image", item.database_software_image_id),
+        detailField("OCID", item.id)
+      ];
+      return `${{renderDetailHeader(item, "database", fields)}}${{detailTable("Pluggable Databases", compactPluggableRows(pdbs), "<th>Name</th><th>Status</th><th>Open Mode</th><th>Restricted</th><th>Patch Version</th>", 5)}}`;
+    }}
+
+    function renderPluggableDatabaseDetail(item) {{
+      const database = findResource("database", item.database_id);
+      const home = findResource("db_home", item.db_home_id);
+      const cluster = findResource("vm_cluster", item.vm_cluster_id);
+      const fields = [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("PDB Name", item.pdb_name),
+        detailField("Open Mode", item.open_mode),
+        detailField("Restricted", item.is_restricted),
+        detailField("Patch Version", item.patch_version),
+        detailField("Created", item.time_created),
+        detailField("Lifecycle Details", item.lifecycle_details),
+        linkedResourceField("Database", database, "database"),
+        linkedResourceField("DB Home", home, "db_home"),
+        linkedResourceField("VM Cluster", cluster, "vm_cluster"),
+        detailField("OCID", item.id)
+      ];
+      return renderDetailHeader(item, "pluggable_database", fields);
+    }}
+
+    function renderAutonomousVmClusterDetail(item) {{
+      const infrastructure = findResource("infrastructure", item.exadata_infrastructure_id);
+      const fields = [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("OCPUs", item.cpus_enabled),
+        linkedResourceField("Infrastructure", infrastructure, "infrastructure"),
+        detailField("OCID", item.id)
+      ];
+      return renderDetailHeader(item, "autonomous_vm_cluster", fields);
+    }}
+
+    function renderDetailPage() {{
+      const item = findResource(state.detailType, state.detailId);
+      if (!item) {{
+        return `<section class="panel"><div class="empty">Resource not found</div></section>`;
+      }}
+      if (state.detailType === "infrastructure") return renderInfrastructureDetail(item);
+      if (state.detailType === "vm_cluster") return renderVmClusterDetail(item);
+      if (state.detailType === "db_home") return renderDbHomeDetail(item);
+      if (state.detailType === "database") return renderDatabaseDetail(item);
+      if (state.detailType === "pluggable_database") return renderPluggableDatabaseDetail(item);
+      if (state.detailType === "autonomous_vm_cluster") return renderAutonomousVmClusterDetail(item);
+      return renderDetailHeader(item, state.detailType, [
+        detailField("Region", item.region),
+        detailField("Compartment", item.compartment_path),
+        detailField("OCID", item.id)
+      ]);
     }}
 
     function tablePanel(title, rows, header, colspan) {{
@@ -1218,13 +1714,20 @@ def render_dashboard(inventory: Inventory) -> str:
         compartments: "Compartments",
         infrastructures: "Infrastructure",
         vm_clusters: "VM Clusters",
+        db_homes: "DB Homes",
+        databases: "Databases",
         autonomous_vm_clusters: "Autonomous VM Clusters"
       }};
-      document.getElementById("viewTitle").textContent = titleMap[state.view];
+      const detailItem = state.view === "detail" ? findResource(state.detailType, state.detailId) : null;
+      document.getElementById("viewTitle").textContent = detailItem
+        ? (detailItem.display_name || detailItem.pdb_name || "Resource Details")
+        : (titleMap[state.view] || "Resource Details");
       const filterMeta = (state.compartmentPath || "root") === "root" ? "" : ` | compartment ${{state.compartmentPath}}`;
       document.getElementById("viewMeta").textContent = `${{inventory.generated_at}} | home region ${{inventory.home_region || "-"}}${{filterMeta}}`;
 
-      if (state.view === "overview") {{
+      if (state.view === "detail") {{
+        document.getElementById("content").innerHTML = renderDetailPage();
+      }} else if (state.view === "overview") {{
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}<div class="overview">${{renderCapacityPanel()}}${{renderStatusPanel()}}</div>`;
       }} else if (state.view === "compartments") {{
         document.getElementById("content").innerHTML = `${{renderMetrics()}}${{renderCompartmentBrowser()}}`;
@@ -1232,6 +1735,10 @@ def render_dashboard(inventory: Inventory) -> str:
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{infraRows()}}`;
       }} else if (state.view === "vm_clusters") {{
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{vmRows()}}`;
+      }} else if (state.view === "db_homes") {{
+        document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{dbHomeRows()}}`;
+      }} else if (state.view === "databases") {{
+        document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{databaseRows()}}`;
       }} else {{
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{autonomousRows()}}`;
       }}
@@ -1240,6 +1747,8 @@ def render_dashboard(inventory: Inventory) -> str:
     document.querySelectorAll(".tab").forEach((button) => {{
       button.addEventListener("click", () => {{
         state.view = button.dataset.view;
+        state.detailType = "";
+        state.detailId = "";
         render();
       }});
     }});
@@ -1250,6 +1759,23 @@ def render_dashboard(inventory: Inventory) -> str:
     }});
 
     document.getElementById("content").addEventListener("click", (event) => {{
+      const detailButton = event.target.closest("[data-detail-type][data-detail-id]");
+      if (detailButton) {{
+        state.detailType = detailButton.dataset.detailType || "";
+        state.detailId = detailButton.dataset.detailId || "";
+        state.detailFromView = state.view === "detail" ? state.detailFromView : state.view;
+        state.view = "detail";
+        render();
+        return;
+      }}
+      const backButton = event.target.closest("[data-back-view]");
+      if (backButton) {{
+        state.view = backButton.dataset.backView || state.detailFromView || "overview";
+        state.detailType = "";
+        state.detailId = "";
+        render();
+        return;
+      }}
       const compartmentButton = event.target.closest("[data-compartment-path]");
       if (compartmentButton) {{
         state.compartmentPath = compartmentButton.dataset.compartmentPath || "root";

@@ -7,16 +7,24 @@ from typing import Any, Dict, Iterable, List, Type, TypeVar
 HEALTHY_STATES = {"ACTIVE", "AVAILABLE"}
 ATTENTION_STATES = {
     "BACKUP_IN_PROGRESS",
+    "CONVERTING",
+    "DISABLED",
     "MAINTENANCE_IN_PROGRESS",
     "PROVISIONING",
+    "REFRESHING",
+    "RELOCATING",
+    "RELOCATED",
+    "RESTORE_IN_PROGRESS",
     "SCALE_IN_PROGRESS",
     "TERMINATING",
     "UPDATING",
+    "UPGRADING",
 }
 CRITICAL_STATES = {
     "FAILED",
     "INACTIVE",
     "REQUIRES_ACTIVATION",
+    "RESTORE_FAILED",
     "TERMINATED",
     "UNAVAILABLE",
 }
@@ -106,6 +114,76 @@ class AutonomousVmCluster:
     console_url: str = ""
 
 
+@dataclass
+class DbHome:
+    id: str
+    region: str
+    compartment_id: str
+    compartment_path: str
+    display_name: str
+    lifecycle_state: str
+    vm_cluster_id: str = ""
+    vm_cluster_name: str = ""
+    db_version: str = ""
+    db_home_location: str = ""
+    lifecycle_details: str = ""
+    time_created: str = ""
+    database_software_image_id: str = ""
+    last_patch_history_entry_id: str = ""
+    console_url: str = ""
+
+
+@dataclass
+class Database:
+    id: str
+    region: str
+    compartment_id: str
+    compartment_path: str
+    display_name: str
+    lifecycle_state: str
+    db_home_id: str = ""
+    db_home_name: str = ""
+    vm_cluster_id: str = ""
+    vm_cluster_name: str = ""
+    db_name: str = ""
+    db_unique_name: str = ""
+    pdb_name: str = ""
+    db_workload: str = ""
+    lifecycle_details: str = ""
+    time_created: str = ""
+    last_backup_timestamp: str = ""
+    patch_version: str = ""
+    is_cdb: bool = False
+    sid_prefix: str = ""
+    database_software_image_id: str = ""
+    character_set: str = ""
+    ncharacter_set: str = ""
+    console_url: str = ""
+
+
+@dataclass
+class PluggableDatabase:
+    id: str
+    region: str
+    compartment_id: str
+    compartment_path: str
+    display_name: str
+    lifecycle_state: str
+    database_id: str = ""
+    database_name: str = ""
+    db_home_id: str = ""
+    db_home_name: str = ""
+    vm_cluster_id: str = ""
+    vm_cluster_name: str = ""
+    pdb_name: str = ""
+    open_mode: str = ""
+    is_restricted: bool = False
+    lifecycle_details: str = ""
+    time_created: str = ""
+    patch_version: str = ""
+    console_url: str = ""
+
+
 T = TypeVar("T")
 
 
@@ -123,6 +201,9 @@ class Inventory:
     infrastructures: List[ExadataInfrastructure] = field(default_factory=list)
     vm_clusters: List[VmCluster] = field(default_factory=list)
     autonomous_vm_clusters: List[AutonomousVmCluster] = field(default_factory=list)
+    db_homes: List[DbHome] = field(default_factory=list)
+    databases: List[Database] = field(default_factory=list)
+    pluggable_databases: List[PluggableDatabase] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -144,12 +225,20 @@ class Inventory:
             autonomous_vm_clusters=_load_many(
                 AutonomousVmCluster, data.get("autonomous_vm_clusters", [])
             ),
+            db_homes=_load_many(DbHome, data.get("db_homes", [])),
+            databases=_load_many(Database, data.get("databases", [])),
+            pluggable_databases=_load_many(
+                PluggableDatabase, data.get("pluggable_databases", [])
+            ),
         )
 
     def summary(self) -> Dict[str, Any]:
         infrastructure_count = len(self.infrastructures)
         vm_cluster_count = len(self.vm_clusters)
         autonomous_vm_cluster_count = len(self.autonomous_vm_clusters)
+        db_home_count = len(self.db_homes)
+        database_count = len(self.databases)
+        pluggable_database_count = len(self.pluggable_databases)
         total_cluster_count = vm_cluster_count + autonomous_vm_cluster_count
         total_ocpus_enabled = sum(i.cpus_enabled for i in self.infrastructures)
         total_ocpu_capacity = sum(i.max_cpu_count for i in self.infrastructures)
@@ -160,11 +249,19 @@ class Inventory:
                 *self.infrastructures,
                 *self.vm_clusters,
                 *self.autonomous_vm_clusters,
+                *self.db_homes,
+                *self.databases,
+                *self.pluggable_databases,
             ]
             if status_tone(item.lifecycle_state) == "healthy"
         )
         resource_count = (
-            infrastructure_count + vm_cluster_count + autonomous_vm_cluster_count
+            infrastructure_count
+            + vm_cluster_count
+            + autonomous_vm_cluster_count
+            + db_home_count
+            + database_count
+            + pluggable_database_count
         )
         attention_resources = resource_count - healthy_resources
 
@@ -177,6 +274,9 @@ class Inventory:
             "infrastructure_count": infrastructure_count,
             "vm_cluster_count": vm_cluster_count,
             "autonomous_vm_cluster_count": autonomous_vm_cluster_count,
+            "db_home_count": db_home_count,
+            "database_count": database_count,
+            "pluggable_database_count": pluggable_database_count,
             "total_cluster_count": total_cluster_count,
             "region_count": len(set(self.regions)),
             "compartment_count": len(self.compartments),

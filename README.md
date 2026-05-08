@@ -4,7 +4,7 @@ This repo includes a reusable Python app for OCI Exadata Cloud@Customer inventor
 
 ## What It Does
 
-- Fetches ExaCC Exadata infrastructures, VM clusters, and autonomous VM clusters.
+- Fetches ExaCC Exadata infrastructures, VM clusters, autonomous VM clusters, DB homes, databases, and pluggable databases.
 - Browses OCI compartments and filters inventory by selected compartment scope.
 - Renders a self-contained modern HTML dashboard that opens directly in a browser.
 - Exports summary, JSON, and CSV inventory views.
@@ -57,6 +57,7 @@ Serve the dashboard locally:
 
 The served interface can discover profile names from `~/.oci/config`, load a selected profile, toggle all subscribed regions, and refresh the dashboard without restarting the server.
 The Compartments view shows the loaded compartment tree, resource counts, and click-to-filter behavior for the rest of the dashboard.
+The VM Clusters view also shows linked DB homes and databases inline, with separate DB Homes and Databases tabs for focused browsing. Resource names open in-app detail pages; the small icon before a name opens the resource in the OCI Console.
 
 ## Inventory Exports
 
@@ -66,6 +67,9 @@ The Compartments view shows the loaded compartment tree, resource counts, and cl
 ./exacc.py inventory --profile DEFAULT --format csv --resource infrastructures
 ./exacc.py inventory --profile DEFAULT --format csv --resource vm-clusters
 ./exacc.py inventory --profile DEFAULT --format csv --resource autonomous-vm-clusters
+./exacc.py inventory --profile DEFAULT --format csv --resource db-homes
+./exacc.py inventory --profile DEFAULT --format csv --resource databases
+./exacc.py inventory --profile DEFAULT --format csv --resource pluggable-databases
 ./exacc.py inventory --profile DEFAULT --format csv --resource versions
 ```
 
