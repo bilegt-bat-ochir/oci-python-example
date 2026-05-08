@@ -1,6 +1,6 @@
 # OCI ExaCC Operations App
 
-This repo now includes a reusable Python app for OCI Exadata Cloud@Customer inventory and safe VM cluster operations. The original one-off scripts are still here for reference; the new entry point is `exacc.py`.
+This repo includes a reusable Python app for OCI Exadata Cloud@Customer inventory and safe VM cluster operations. The entry point is `exacc.py`.
 
 ## What It Does
 
@@ -94,15 +94,6 @@ Default defined tags:
 | Up OCPUs | `scale_up_ocpus` |
 
 Time tags should match the current UTC hour marker, for example `21:00_UTC`.
-
-## Migration From Old Scripts
-
-| Old script | New command |
-| --- | --- |
-| `OCI_exacc_vm_clusters_list.py` | `./exacc.py inventory --profile DEFAULT --format csv --resource vm-clusters` |
-| `OCI_exacc_vm_clusters_versions.py` | `./exacc.py inventory --profile DEFAULT --format csv --resource versions` |
-| `OCI_exacc_vm_clusters_list_HTML.py` | `./exacc.py dashboard --profile DEFAULT --all-regions` |
-| `OCI_exacc_vm_clusters_scale_ocpus_tagged.py` | `./exacc.py scale-tagged --profile DEFAULT --all-regions` |
 
 ## Project Layout
 
