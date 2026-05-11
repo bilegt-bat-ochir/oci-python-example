@@ -196,7 +196,56 @@ class OCIInventoryClient:
                     metric_name=metric_name,
                     display_name=display_name,
                     unit=unit,
-                    vm_cluster_id=vm_cluster_id,
+                    resource_id=vm_cluster_id,
+                    filter_dimension_names=("resourceId",),
+                    group_by="hostName",
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval,
+                )
+                for metric_name, display_name, unit in metrics
+            },
+        }
+
+    def fetch_database_metrics(
+        self,
+        *,
+        database_id: str,
+        database_name: str,
+        compartment_id: str,
+        region: str,
+        start_time: datetime,
+        end_time: datetime,
+        interval: str = "1h",
+    ) -> Dict[str, Any]:
+        config = self.oci.config.from_file(self.config_file, self.profile)
+        config = self._region_config(config, region)
+        monitoring_client = self.oci.monitoring.MonitoringClient(config)
+        namespace = "oci_database"
+        metrics = [
+            ("CpuUtilization", "CPU Utilization", "percent"),
+            ("MemoryUtilization", "Memory Utilization", "percent"),
+        ]
+        return {
+            "namespace": namespace,
+            "resource_id": database_id,
+            "resource_name": database_name,
+            "region": region,
+            "compartment_id": compartment_id,
+            "start_time": self._stringify_time(start_time),
+            "end_time": self._stringify_time(end_time),
+            "interval": interval,
+            "metrics": {
+                metric_name: self._fetch_metric_series(
+                    monitoring_client=monitoring_client,
+                    compartment_id=compartment_id,
+                    namespace=namespace,
+                    metric_name=metric_name,
+                    display_name=display_name,
+                    unit=unit,
+                    resource_id=database_id,
+                    filter_dimension_names=("resourceId_database", "resourceId"),
+                    group_by="instanceName,hostName",
                     start_time=start_time,
                     end_time=end_time,
                     interval=interval,
@@ -501,33 +550,62 @@ class OCIInventoryClient:
         metric_name: str,
         display_name: str,
         unit: str,
-        vm_cluster_id: str,
+        resource_id: str,
+        filter_dimension_names: Iterable[str],
+        group_by: str,
         start_time: datetime,
         end_time: datetime,
         interval: str,
     ) -> Dict[str, Any]:
-        escaped_id = self._mql_value(vm_cluster_id)
-        query = (
-            f'{metric_name}[{interval}]{{resourceId = "{escaped_id}"}}'
-            ".groupBy(hostName).mean()"
-        )
-        details = self.oci.monitoring.models.SummarizeMetricsDataDetails(
-            namespace=namespace,
-            query=query,
-            start_time=start_time,
-            end_time=end_time,
-            resolution=interval,
-        )
-        response = monitoring_client.summarize_metrics_data(
-            compartment_id=compartment_id,
-            summarize_metrics_data_details=details,
-            retry_strategy=self.retry_strategy,
-        )
+        escaped_id = self._mql_value(resource_id)
+        query = ""
+        queries = []
+        response_data = []
+        last_error: Exception | None = None
+        received_response = False
+
+        for dimension_name in filter_dimension_names:
+            query = (
+                f'{metric_name}[{interval}]{{{dimension_name} = "{escaped_id}"}}'
+                f".groupBy({group_by}).mean()"
+            )
+            queries.append(query)
+            details = self.oci.monitoring.models.SummarizeMetricsDataDetails(
+                namespace=namespace,
+                query=query,
+                start_time=start_time,
+                end_time=end_time,
+                resolution=interval,
+            )
+            try:
+                response = monitoring_client.summarize_metrics_data(
+                    compartment_id=compartment_id,
+                    summarize_metrics_data_details=details,
+                    retry_strategy=self.retry_strategy,
+                )
+            except Exception as exc:
+                last_error = exc
+                continue
+            received_response = True
+            response_data = list(response.data)
+            if response_data:
+                break
+
+        if not received_response and last_error is not None:
+            raise last_error
+
         series = []
-        for item in response.data:
+        for item in response_data:
             dimensions = getattr(item, "dimensions", {}) or {}
+            instance_name = dimensions.get("instanceName")
+            host_name = dimensions.get("hostName")
             label = (
-                dimensions.get("hostName")
+                f"{instance_name} / {host_name}"
+                if instance_name and host_name
+                else instance_name
+                or host_name
+                or dimensions.get("resourceName_database")
+                or dimensions.get("resourceName_pdb")
                 or dimensions.get("resourceName_dbnode")
                 or dimensions.get("resourceName")
                 or metric_name
@@ -556,6 +634,7 @@ class OCIInventoryClient:
             "display_name": display_name,
             "unit": unit,
             "query": query,
+            "queries": queries,
             "series": sorted(series, key=lambda item: item.get("label", "")),
         }
 

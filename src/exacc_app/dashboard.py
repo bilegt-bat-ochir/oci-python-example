@@ -885,6 +885,7 @@ def render_dashboard(inventory: Inventory) -> str:
       background: #ffffff;
       min-width: 0;
       overflow: hidden;
+      position: relative;
     }}
 
     .metric-chart-head {{
@@ -936,6 +937,66 @@ def render_dashboard(inventory: Inventory) -> str:
     .chart-gridline {{
       stroke: #e5e9f0;
       stroke-width: 1;
+    }}
+
+    .chart-hover-point {{
+      cursor: crosshair;
+      fill: transparent;
+      pointer-events: all;
+      stroke: transparent;
+      stroke-width: 2;
+    }}
+
+    .chart-hover-point:hover,
+    .chart-hover-point:focus {{
+      fill: rgba(37, 87, 167, 0.12);
+      outline: none;
+      stroke: var(--point-color);
+    }}
+
+    .chart-tooltip {{
+      background: #101828;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      box-shadow: 0 12px 28px rgba(16, 24, 40, 0.22);
+      color: #ffffff;
+      display: grid;
+      gap: 5px;
+      left: 50%;
+      max-width: min(260px, calc(100% - 24px));
+      opacity: 0;
+      padding: 10px 12px;
+      pointer-events: none;
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -100%);
+      transition: opacity 120ms ease;
+      z-index: 2;
+    }}
+
+    .chart-tooltip[data-visible="true"] {{
+      opacity: 1;
+    }}
+
+    .chart-tooltip strong {{
+      color: #ffffff;
+      display: block;
+      font-size: 13px;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }}
+
+    .chart-tooltip span {{
+      color: #cbd5e1;
+      display: block;
+      font-size: 12px;
+      line-height: 1.35;
+    }}
+
+    .chart-tooltip .tooltip-value {{
+      color: #ffffff;
+      font-size: 18px;
+      font-weight: 800;
     }}
 
     .chart-legend {{
@@ -1458,23 +1519,27 @@ def render_dashboard(inventory: Inventory) -> str:
       }};
     }}
 
-    function metricWindowFor(clusterId) {{
-      if (!state.metricWindows[clusterId]) {{
-        state.metricWindows[clusterId] = defaultMetricWindow();
-      }}
-      return state.metricWindows[clusterId];
+    function metricResourceKey(resourceType, resourceId) {{
+      return `${{resourceType}}:${{resourceId}}`;
     }}
 
-    function metricRecordFor(clusterId) {{
-      if (!state.metricLoads[clusterId]) {{
-        state.metricLoads[clusterId] = {{
+    function metricWindowFor(metricKey) {{
+      if (!state.metricWindows[metricKey]) {{
+        state.metricWindows[metricKey] = defaultMetricWindow();
+      }}
+      return state.metricWindows[metricKey];
+    }}
+
+    function metricRecordFor(metricKey) {{
+      if (!state.metricLoads[metricKey]) {{
+        state.metricLoads[metricKey] = {{
           key: "",
           loading: false,
           error: "",
           data: null
         }};
       }}
-      return state.metricLoads[clusterId];
+      return state.metricLoads[metricKey];
     }}
 
     function metricRequestKey(metricWindow) {{
@@ -1511,35 +1576,50 @@ def render_dashboard(inventory: Inventory) -> str:
       return `${{numeric.toFixed(1)}}%`;
     }}
 
-    function metricPayload(item) {{
-      const metricWindow = metricWindowFor(item.id);
-      return {{
+    function metricEndpoint(resourceType) {{
+      return resourceType === "database" ? "/api/database-metrics" : "/api/vm-cluster-metrics";
+    }}
+
+    function metricPayload(item, resourceType) {{
+      const metricWindow = metricWindowFor(metricResourceKey(resourceType, item.id));
+      const payload = {{
         profile: document.getElementById("profileInput").value.trim(),
         config_file: document.getElementById("configFileInput").value.trim() || "~/.oci/config",
         sample: Boolean(state.inventorySource && state.inventorySource.sample),
-        vm_cluster_id: item.id,
-        vm_cluster_name: item.display_name || item.id,
         compartment_id: item.compartment_id,
         region: item.region,
         start_time: metricWindow.startIso,
         end_time: metricWindow.endIso,
         interval: metricWindow.interval || "1h"
       }};
+      if (resourceType === "database") {{
+        return {{
+          ...payload,
+          database_id: item.id,
+          database_name: item.display_name || item.db_name || item.id
+        }};
+      }}
+      return {{
+        ...payload,
+        vm_cluster_id: item.id,
+        vm_cluster_name: item.display_name || item.id
+      }};
     }}
 
-    function metricLoadingChanged(item) {{
+    function metricLoadingChanged(item, resourceType) {{
       return state.view === "detail"
-        && state.detailType === "vm_cluster"
+        && state.detailType === resourceType
         && state.detailId === item.id;
     }}
 
-    async function loadVmClusterMetrics(item, force = false) {{
-      const metricWindow = metricWindowFor(item.id);
+    async function loadResourceMetrics(item, resourceType, force = false) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
       const key = metricRequestKey(metricWindow);
-      const record = metricRecordFor(item.id);
+      const record = metricRecordFor(metricKey);
       if (!force && (record.loading || record.key === key)) return;
       if (!apiAvailable()) {{
-        state.metricLoads[item.id] = {{
+        state.metricLoads[metricKey] = {{
           ...record,
           key,
           loading: false,
@@ -1550,7 +1630,7 @@ def render_dashboard(inventory: Inventory) -> str:
         return;
       }}
 
-      state.metricLoads[item.id] = {{
+      state.metricLoads[metricKey] = {{
         ...record,
         key,
         loading: true,
@@ -1559,20 +1639,20 @@ def render_dashboard(inventory: Inventory) -> str:
       render();
 
       try {{
-        const response = await fetch("/api/vm-cluster-metrics", {{
+        const response = await fetch(metricEndpoint(resourceType), {{
           method: "POST",
           headers: {{ "Content-Type": "application/json" }},
-          body: JSON.stringify(metricPayload(item))
+          body: JSON.stringify(metricPayload(item, resourceType))
         }});
         const data = await readJson(response);
-        state.metricLoads[item.id] = {{
+        state.metricLoads[metricKey] = {{
           key,
           loading: false,
           error: "",
           data
         }};
       }} catch (error) {{
-        state.metricLoads[item.id] = {{
+        state.metricLoads[metricKey] = {{
           key,
           loading: false,
           error: error.message,
@@ -1580,18 +1660,35 @@ def render_dashboard(inventory: Inventory) -> str:
         }};
       }}
 
-      if (metricLoadingChanged(item)) {{
+      if (metricLoadingChanged(item, resourceType)) {{
         render();
       }}
     }}
 
-    function maybeLoadVmClusterMetrics(item) {{
-      const metricWindow = metricWindowFor(item.id);
-      const record = metricRecordFor(item.id);
+    function loadVmClusterMetrics(item, force = false) {{
+      return loadResourceMetrics(item, "vm_cluster", force);
+    }}
+
+    function loadDatabaseMetrics(item, force = false) {{
+      return loadResourceMetrics(item, "database", force);
+    }}
+
+    function maybeLoadResourceMetrics(item, resourceType) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
+      const record = metricRecordFor(metricKey);
       const key = metricRequestKey(metricWindow);
       if (!record.loading && record.key !== key) {{
-        loadVmClusterMetrics(item);
+        loadResourceMetrics(item, resourceType);
       }}
+    }}
+
+    function maybeLoadVmClusterMetrics(item) {{
+      maybeLoadResourceMetrics(item, "vm_cluster");
+    }}
+
+    function maybeLoadDatabaseMetrics(item) {{
+      maybeLoadResourceMetrics(item, "database");
     }}
 
     function intervalOption(value, label, selected) {{
@@ -1617,16 +1714,21 @@ def render_dashboard(inventory: Inventory) -> str:
       return {{ latest, average, samples: points.length }};
     }}
 
-    function chartPath(points, minTime, maxTime, chart) {{
+    function chartPointPosition(point, minTime, maxTime, chart) {{
       const span = Math.max(1, maxTime - minTime);
+      const timestamp = Date.parse(point.timestamp);
+      const value = Math.max(0, Math.min(100, Number(point.value)));
+      const x = chart.left + ((timestamp - minTime) / span) * chart.width;
+      const y = chart.top + (1 - value / 100) * chart.height;
+      return {{ x, y }};
+    }}
+
+    function chartPath(points, minTime, maxTime, chart) {{
       return points
         .filter((point) => Number.isFinite(Number(point.value)) && !Number.isNaN(Date.parse(point.timestamp || "")))
         .map((point, index) => {{
-          const timestamp = Date.parse(point.timestamp);
-          const value = Math.max(0, Math.min(100, Number(point.value)));
-          const x = chart.left + ((timestamp - minTime) / span) * chart.width;
-          const y = chart.top + (1 - value / 100) * chart.height;
-          return `${{index ? "L" : "M"}} ${{x.toFixed(1)}} ${{y.toFixed(1)}}`;
+          const position = chartPointPosition(point, minTime, maxTime, chart);
+          return `${{index ? "L" : "M"}} ${{position.x.toFixed(1)}} ${{position.y.toFixed(1)}}`;
         }})
         .join(" ");
     }}
@@ -1659,6 +1761,17 @@ def render_dashboard(inventory: Inventory) -> str:
         const path = chartPath(item.points, minTime, maxTime, chart);
         return `<path d="${{path}}" fill="none" stroke="${{color}}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>`;
       }}).join("");
+      const hoverPoints = series.map((item, index) => {{
+        const color = chartColors[index % chartColors.length];
+        const label = item.label || `Series ${{index + 1}}`;
+        return item.points.map((point) => {{
+          const position = chartPointPosition(point, minTime, maxTime, chart);
+          const timeLabel = formatChartTime(point.timestamp);
+          const valueLabel = formatPercent(point.value);
+          const detail = `${{title}} | ${{label}} | ${{timeLabel}} | ${{valueLabel}}`;
+          return `<circle class="chart-hover-point" tabindex="0" cx="${{position.x.toFixed(1)}}" cy="${{position.y.toFixed(1)}}" r="9" style="--point-color:${{color}}" data-metric="${{escapeHtml(title)}}" data-label="${{escapeHtml(label)}}" data-time="${{escapeHtml(timeLabel)}}" data-value="${{escapeHtml(valueLabel)}}" aria-label="${{escapeHtml(detail)}}"><title>${{escapeHtml(detail)}}</title></circle>`;
+        }}).join("");
+      }}).join("");
       const legend = series.map((item, index) => {{
         const color = chartColors[index % chartColors.length];
         return `<span class="legend-item"><span class="legend-dot" style="background:${{color}}"></span>${{escapeHtml(item.label || `Node ${{index + 1}}`)}}</span>`;
@@ -1673,16 +1786,19 @@ def render_dashboard(inventory: Inventory) -> str:
           ${{grid}}
           <line class="chart-gridline" x1="${{chart.left}}" y1="${{chart.top + chart.height}}" x2="${{chart.left + chart.width}}" y2="${{chart.top + chart.height}}"></line>
           ${{paths}}
+          ${{hoverPoints}}
           <text class="chart-axis" x="${{chart.left}}" y="230">${{escapeHtml(formatChartTime(minTime))}}</text>
           <text class="chart-axis" x="${{chart.left + chart.width - 110}}" y="230">${{escapeHtml(formatChartTime(maxTime))}}</text>
         </svg>
+        <div class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
         <div class="chart-legend">${{legend}}</div>
       </article>`;
     }}
 
-    function renderVmClusterMetricsPanel(item) {{
-      const metricWindow = metricWindowFor(item.id);
-      const record = metricRecordFor(item.id);
+    function renderResourceMetricsPanel(item, resourceType, namespaceFallback) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
+      const record = metricRecordFor(metricKey);
       const data = record.data;
       const interval = metricWindow.interval || "1h";
       const status = record.loading
@@ -1690,7 +1806,7 @@ def render_dashboard(inventory: Inventory) -> str:
         : record.error
           ? record.error
           : data
-            ? `${{data.namespace || "oci_database_cluster"}} | ${{escapeHtml(data.interval || interval)}}`
+            ? `${{data.namespace || namespaceFallback}} | ${{escapeHtml(data.interval || interval)}}`
             : "Metrics pending";
       const statusTone = record.error ? "critical" : "neutral";
       const options = metricIntervals
@@ -1699,7 +1815,7 @@ def render_dashboard(inventory: Inventory) -> str:
       const charts = data && data.metrics
         ? `${{renderMetricChart(data.metrics.CpuUtilization)}}${{renderMetricChart(data.metrics.MemoryUtilization)}}`
         : `${{renderMetricChart({{ name: "CpuUtilization", display_name: "CPU Utilization", series: [] }})}}${{renderMetricChart({{ name: "MemoryUtilization", display_name: "Memory Utilization", series: [] }})}}`;
-      return `<section class="panel metrics-panel" data-metrics-cluster-id="${{escapeHtml(item.id)}}">
+      return `<section class="panel metrics-panel" data-metrics-resource-type="${{escapeHtml(resourceType)}}" data-metrics-resource-id="${{escapeHtml(item.id)}}">
         <div class="panel-header"><h3>CPU and Memory</h3><span>${{escapeHtml(item.region || "-")}}</span></div>
         <div class="metric-controls">
           <label class="metric-control"><span>Start</span><input class="metrics-start" type="datetime-local" step="3600" value="${{escapeHtml(toLocalInputValue(metricWindow.startIso))}}"></label>
@@ -1717,13 +1833,22 @@ def render_dashboard(inventory: Inventory) -> str:
       </section>`;
     }}
 
-    function applyMetricControls(container, item) {{
+    function renderVmClusterMetricsPanel(item) {{
+      return renderResourceMetricsPanel(item, "vm_cluster", "oci_database_cluster");
+    }}
+
+    function renderDatabaseMetricsPanel(item) {{
+      return renderResourceMetricsPanel(item, "database", "oci_database");
+    }}
+
+    function applyMetricControls(container, item, resourceType) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
       const startIso = fromLocalInputValue(container.querySelector(".metrics-start").value);
       const endIso = fromLocalInputValue(container.querySelector(".metrics-end").value);
       const interval = container.querySelector(".metrics-interval").value || "1h";
-      const record = metricRecordFor(item.id);
+      const record = metricRecordFor(metricKey);
       if (!startIso || !endIso || Date.parse(startIso) >= Date.parse(endIso)) {{
-        state.metricLoads[item.id] = {{
+        state.metricLoads[metricKey] = {{
           ...record,
           loading: false,
           error: "Start time must be before end time"
@@ -1731,24 +1856,25 @@ def render_dashboard(inventory: Inventory) -> str:
         render();
         return;
       }}
-      state.metricWindows[item.id] = {{ startIso, endIso, interval }};
-      loadVmClusterMetrics(item, true);
+      state.metricWindows[metricKey] = {{ startIso, endIso, interval }};
+      loadResourceMetrics(item, resourceType, true);
     }}
 
-    function shiftMetricWindow(item, days) {{
-      const metricWindow = metricWindowFor(item.id);
+    function shiftMetricWindow(item, resourceType, days) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
       const offset = days * dayMs;
-      state.metricWindows[item.id] = {{
+      state.metricWindows[metricKey] = {{
         ...metricWindow,
         startIso: new Date(Date.parse(metricWindow.startIso) + offset).toISOString(),
         endIso: new Date(Date.parse(metricWindow.endIso) + offset).toISOString()
       }};
-      loadVmClusterMetrics(item, true);
+      loadResourceMetrics(item, resourceType, true);
     }}
 
-    function setLastDayMetricWindow(item) {{
-      state.metricWindows[item.id] = defaultMetricWindow();
-      loadVmClusterMetrics(item, true);
+    function setLastDayMetricWindow(item, resourceType) {{
+      state.metricWindows[metricResourceKey(resourceType, item.id)] = defaultMetricWindow();
+      loadResourceMetrics(item, resourceType, true);
     }}
 
     function metric(label, value, note) {{
@@ -2145,7 +2271,7 @@ def render_dashboard(inventory: Inventory) -> str:
         detailField("Software Image", item.database_software_image_id),
         detailField("OCID", item.id)
       ];
-      return `${{renderDetailHeader(item, "database", fields)}}${{detailTable("Pluggable Databases", compactPluggableRows(pdbs), "<th>Name</th><th>Status</th><th>Open Mode</th><th>Restricted</th><th>Patch Version</th>", 5)}}`;
+      return `${{renderDetailHeader(item, "database", fields)}}${{renderDatabaseMetricsPanel(item)}}${{detailTable("Pluggable Databases", compactPluggableRows(pdbs), "<th>Name</th><th>Status</th><th>Open Mode</th><th>Restricted</th><th>Patch Version</th>", 5)}}`;
     }}
 
     function renderPluggableDatabaseDetail(item) {{
@@ -2251,6 +2377,34 @@ def render_dashboard(inventory: Inventory) -> str:
       if (state.view === "detail" && state.detailType === "vm_cluster" && detailItem) {{
         maybeLoadVmClusterMetrics(detailItem);
       }}
+      if (state.view === "detail" && state.detailType === "database" && detailItem) {{
+        maybeLoadDatabaseMetrics(detailItem);
+      }}
+    }}
+
+    function hideChartTooltip(chart) {{
+      const tooltip = chart ? chart.querySelector(".chart-tooltip") : null;
+      if (!tooltip) return;
+      tooltip.dataset.visible = "false";
+      tooltip.setAttribute("aria-hidden", "true");
+    }}
+
+    function showChartTooltip(point, event = null) {{
+      const chart = point.closest(".metric-chart");
+      const tooltip = chart ? chart.querySelector(".chart-tooltip") : null;
+      if (!chart || !tooltip) return;
+      const chartRect = chart.getBoundingClientRect();
+      const pointRect = point.getBoundingClientRect();
+      const rawX = event ? event.clientX - chartRect.left : pointRect.left + pointRect.width / 2 - chartRect.left;
+      const rawY = event ? event.clientY - chartRect.top : pointRect.top + pointRect.height / 2 - chartRect.top;
+      const leftLimit = 112;
+      const x = Math.min(Math.max(rawX, leftLimit), Math.max(leftLimit, chartRect.width - leftLimit));
+      const y = Math.max(rawY - 10, 104);
+      tooltip.innerHTML = `<strong>${{escapeHtml(point.dataset.metric || "Metric")}}</strong><span>${{escapeHtml(point.dataset.label || "")}}</span><span>${{escapeHtml(point.dataset.time || "")}}</span><span class="tooltip-value">${{escapeHtml(point.dataset.value || "-")}}</span>`;
+      tooltip.style.left = `${{x}}px`;
+      tooltip.style.top = `${{y}}px`;
+      tooltip.dataset.visible = "true";
+      tooltip.setAttribute("aria-hidden", "false");
     }}
 
     document.querySelectorAll(".tab").forEach((button) => {{
@@ -2265,6 +2419,34 @@ def render_dashboard(inventory: Inventory) -> str:
     document.getElementById("searchInput").addEventListener("input", (event) => {{
       state.query = event.target.value.trim().toLowerCase();
       render();
+    }});
+
+    document.getElementById("content").addEventListener("mousemove", (event) => {{
+      const point = event.target.closest(".chart-hover-point");
+      if (point) {{
+        showChartTooltip(point, event);
+      }}
+    }});
+
+    document.getElementById("content").addEventListener("mouseout", (event) => {{
+      const point = event.target.closest(".chart-hover-point");
+      if (!point) return;
+      const chart = point.closest(".metric-chart");
+      if (chart) hideChartTooltip(chart);
+    }});
+
+    document.getElementById("content").addEventListener("focusin", (event) => {{
+      const point = event.target.closest(".chart-hover-point");
+      if (point) {{
+        showChartTooltip(point);
+      }}
+    }});
+
+    document.getElementById("content").addEventListener("focusout", (event) => {{
+      const point = event.target.closest(".chart-hover-point");
+      if (!point) return;
+      const chart = point.closest(".metric-chart");
+      if (chart) hideChartTooltip(chart);
     }});
 
     document.getElementById("content").addEventListener("click", (event) => {{
@@ -2287,18 +2469,19 @@ def render_dashboard(inventory: Inventory) -> str:
       }}
       const metricsButton = event.target.closest("[data-metrics-action]");
       if (metricsButton) {{
-        const container = metricsButton.closest("[data-metrics-cluster-id]");
-        const item = container ? findResource("vm_cluster", container.dataset.metricsClusterId || "") : null;
+        const container = metricsButton.closest("[data-metrics-resource-type][data-metrics-resource-id]");
+        const resourceType = container ? container.dataset.metricsResourceType || "" : "";
+        const item = container ? findResource(resourceType, container.dataset.metricsResourceId || "") : null;
         if (!item) return;
         const action = metricsButton.dataset.metricsAction;
         if (action === "apply") {{
-          applyMetricControls(container, item);
+          applyMetricControls(container, item, resourceType);
         }} else if (action === "prev-day") {{
-          shiftMetricWindow(item, -1);
+          shiftMetricWindow(item, resourceType, -1);
         }} else if (action === "next-day") {{
-          shiftMetricWindow(item, 1);
+          shiftMetricWindow(item, resourceType, 1);
         }} else if (action === "last-day") {{
-          setLastDayMetricWindow(item);
+          setLastDayMetricWindow(item, resourceType);
         }}
         return;
       }}

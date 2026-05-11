@@ -140,6 +140,51 @@ def sample_vm_cluster_metrics(
     }
 
 
+def sample_database_metrics(
+    *,
+    database_id: str,
+    database_name: str,
+    compartment_id: str,
+    region: str,
+    start_time: datetime,
+    end_time: datetime,
+    interval: str,
+) -> Dict[str, Any]:
+    metrics = sample_vm_cluster_metrics(
+        vm_cluster_id=database_id,
+        vm_cluster_name=database_name,
+        compartment_id=compartment_id,
+        region=region,
+        start_time=start_time,
+        end_time=end_time,
+        interval=interval,
+    )
+    metrics["namespace"] = "oci_database"
+    metrics["resource_id"] = database_id
+    metrics["resource_name"] = database_name
+
+    for metric_name, metric in metrics["metrics"].items():
+        metric["query"] = (
+            f'sample {metric_name}[{interval}]'
+            f'{{resourceId_database = "{database_id}"}}'
+            ".groupBy(instanceName,hostName).mean()"
+        )
+        for index, series in enumerate(metric.get("series", []), start=1):
+            instance_name = f"{database_name or 'database'}{index}"
+            host_name = f"{database_name or 'database'}-host{index}"
+            series["label"] = f"{instance_name} / {host_name}"
+            series["dimensions"] = {
+                "resourceId": database_id,
+                "resourceName": database_name,
+                "resourceId_database": database_id,
+                "resourceName_database": database_name,
+                "instanceName": instance_name,
+                "hostName": host_name,
+            }
+
+    return metrics
+
+
 def serve_inventory_dashboard(
     inventory: Inventory, *, host: str = "127.0.0.1", port: int = 8000
 ) -> None:
@@ -167,6 +212,9 @@ def serve_inventory_dashboard(
                 return
             if parsed.path == "/api/vm-cluster-metrics":
                 self._handle_vm_cluster_metrics()
+                return
+            if parsed.path == "/api/database-metrics":
+                self._handle_database_metrics()
                 return
             self._send_json(404, {"error": "Not found"})
 
@@ -268,6 +316,72 @@ def serve_inventory_dashboard(
             except Exception as exc:
                 self._send_json(
                     500, {"error": f"Could not load VM cluster metrics: {exc}"}
+                )
+                return
+            self._send_json(200, metrics)
+
+        def _handle_database_metrics(self) -> None:
+            try:
+                data = self._read_json()
+                database_id = str(data.get("database_id") or "").strip()
+                database_name = str(data.get("database_name") or "").strip()
+                compartment_id = str(data.get("compartment_id") or "").strip()
+                region = str(data.get("region") or "").strip()
+                if not database_id:
+                    raise OCIAppError("Database OCID is required.")
+                if not compartment_id:
+                    raise OCIAppError("Database compartment OCID is required.")
+                if not region:
+                    raise OCIAppError("Database region is required.")
+
+                interval = str(data.get("interval") or "1h").strip()
+                if interval not in METRIC_INTERVALS:
+                    raise OCIAppError(
+                        "Metric interval must be one of "
+                        f"{', '.join(METRIC_INTERVALS)}."
+                    )
+
+                now = datetime.now(timezone.utc)
+                end_time = parse_metric_time(data.get("end_time"), now)
+                start_time = parse_metric_time(
+                    data.get("start_time"), end_time - timedelta(days=1)
+                )
+                if start_time >= end_time:
+                    raise OCIAppError("Metric start time must be before end time.")
+
+                if data.get("sample"):
+                    metrics = sample_database_metrics(
+                        database_id=database_id,
+                        database_name=database_name,
+                        compartment_id=compartment_id,
+                        region=region,
+                        start_time=start_time,
+                        end_time=end_time,
+                        interval=interval,
+                    )
+                else:
+                    profile = str(data.get("profile", "")).strip()
+                    if not profile:
+                        raise OCIAppError("OCI profile is required.")
+                    client = OCIInventoryClient(
+                        profile=profile,
+                        config_file=str(data.get("config_file") or "~/.oci/config"),
+                    )
+                    metrics = client.fetch_database_metrics(
+                        database_id=database_id,
+                        database_name=database_name,
+                        compartment_id=compartment_id,
+                        region=region,
+                        start_time=start_time,
+                        end_time=end_time,
+                        interval=interval,
+                    )
+            except OCIAppError as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(
+                    500, {"error": f"Could not load database metrics: {exc}"}
                 )
                 return
             self._send_json(200, metrics)
