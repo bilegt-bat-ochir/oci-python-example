@@ -42,6 +42,7 @@ def empty_inventory() -> Inventory:
 def sample_inventory() -> Inventory:
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     home_region = "eu-frankfurt-1"
+    region = home_region
     tenant = "demo-tenant"
     compartments = [
         Compartment(
@@ -99,8 +100,8 @@ def sample_inventory() -> Inventory:
     infrastructures = [
         ExadataInfrastructure(
             id="ocid1.exadatainfrastructure.demo.infra1",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.infrastructure",
+            region=region,
+            compartment_id="ocid1.compartment.demo.production",
             compartment_path="ExaCC:production",
             display_name="prod-x10m-infra",
             lifecycle_state="ACTIVE",
@@ -112,13 +113,13 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/exacc/"
                 f"infrastructures/ocid1.exadatainfrastructure.demo.infra1"
-                f"?tenant={tenant}&region=uk-london-1"
+                f"?tenant={tenant}&region={region}"
             ),
         ),
         ExadataInfrastructure(
             id="ocid1.exadatainfrastructure.demo.infra2",
-            region="eu-frankfurt-1",
-            compartment_id="ocid1.compartment.demo.infrastructure",
+            region=region,
+            compartment_id="ocid1.compartment.demo.nonproduction",
             compartment_path="ExaCC:nonproduction",
             display_name="test-x9m-infra",
             lifecycle_state="REQUIRES_ACTIVATION",
@@ -130,7 +131,7 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/exacc/"
                 f"infrastructures/ocid1.exadatainfrastructure.demo.infra2"
-                f"?tenant={tenant}&region=eu-frankfurt-1"
+                f"?tenant={tenant}&region={region}"
             ),
         ),
     ]
@@ -138,8 +139,8 @@ def sample_inventory() -> Inventory:
     vm_clusters = [
         VmCluster(
             id="ocid1.vmcluster.demo.cluster1",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster1",
+            region=region,
+            compartment_id="ocid1.compartment.demo.billing",
             compartment_path="ExaCC:production:billing",
             display_name="billing-vm1",
             lifecycle_state="AVAILABLE",
@@ -153,13 +154,13 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/exacc/"
                 f"clusters/ocid1.vmcluster.demo.cluster1"
-                f"?tenant={tenant}&region=uk-london-1"
+                f"?tenant={tenant}&region={region}"
             ),
         ),
         VmCluster(
             id="ocid1.vmcluster.demo.cluster2",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster2",
+            region=region,
+            compartment_id="ocid1.compartment.demo.warehouse",
             compartment_path="ExaCC:production:warehouse",
             display_name="warehouse-vm1",
             lifecycle_state="UPDATING",
@@ -173,7 +174,7 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/exacc/"
                 f"clusters/ocid1.vmcluster.demo.cluster2"
-                f"?tenant={tenant}&region=uk-london-1"
+                f"?tenant={tenant}&region={region}"
             ),
         ),
     ]
@@ -181,7 +182,7 @@ def sample_inventory() -> Inventory:
     autonomous = [
         AutonomousVmCluster(
             id="ocid1.autonomousvmcluster.demo.avmc1",
-            region="uk-london-1",
+            region=region,
             compartment_id="ocid1.compartment.demo.autonomous",
             compartment_path="ExaCC:production:autonomous",
             display_name="prod-autonomous-vm",
@@ -192,7 +193,7 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/exacc/"
                 f"clusters/ocid1.autonomousvmcluster.demo.avmc1"
-                f"?tenant={tenant}&region=uk-london-1"
+                f"?tenant={tenant}&region={region}"
             ),
         )
     ]
@@ -200,8 +201,8 @@ def sample_inventory() -> Inventory:
     db_homes = [
         DbHome(
             id="ocid1.dbhome.demo.home1",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster1",
+            region=region,
+            compartment_id="ocid1.compartment.demo.billing",
             compartment_path="ExaCC:production:billing",
             display_name="billing-dbhome-19c",
             lifecycle_state="AVAILABLE",
@@ -212,13 +213,13 @@ def sample_inventory() -> Inventory:
             time_created="2024-11-20T09:00:00+00:00",
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/db/db-homes/"
-                f"ocid1.dbhome.demo.home1?tenant={tenant}&region=uk-london-1"
+                f"ocid1.dbhome.demo.home1?tenant={tenant}&region={region}"
             ),
         ),
         DbHome(
             id="ocid1.dbhome.demo.home2",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster2",
+            region=region,
+            compartment_id="ocid1.compartment.demo.warehouse",
             compartment_path="ExaCC:production:warehouse",
             display_name="warehouse-dbhome-19c",
             lifecycle_state="AVAILABLE",
@@ -229,7 +230,7 @@ def sample_inventory() -> Inventory:
             time_created="2024-08-15T10:30:00+00:00",
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/db/db-homes/"
-                f"ocid1.dbhome.demo.home2?tenant={tenant}&region=uk-london-1"
+                f"ocid1.dbhome.demo.home2?tenant={tenant}&region={region}"
             ),
         ),
     ]
@@ -237,8 +238,8 @@ def sample_inventory() -> Inventory:
     databases = [
         Database(
             id="ocid1.database.demo.db1",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster1",
+            region=region,
+            compartment_id="ocid1.compartment.demo.billing",
             compartment_path="ExaCC:production:billing",
             display_name="BILLING",
             lifecycle_state="AVAILABLE",
@@ -247,7 +248,7 @@ def sample_inventory() -> Inventory:
             vm_cluster_id=vm_clusters[0].id,
             vm_cluster_name=vm_clusters[0].display_name,
             db_name="BILLING",
-            db_unique_name="BILLING_uk1",
+            db_unique_name="BILLING_fr1",
             db_workload="OLTP",
             time_created="2024-11-20T10:00:00+00:00",
             last_backup_timestamp="2026-05-08T01:00:00+00:00",
@@ -258,13 +259,13 @@ def sample_inventory() -> Inventory:
             ncharacter_set="AL16UTF16",
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/db/databases/"
-                f"ocid1.database.demo.db1?tenant={tenant}&region=uk-london-1"
+                f"ocid1.database.demo.db1?tenant={tenant}&region={region}"
             ),
         ),
         Database(
             id="ocid1.database.demo.db2",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster2",
+            region=region,
+            compartment_id="ocid1.compartment.demo.warehouse",
             compartment_path="ExaCC:production:warehouse",
             display_name="WAREHOUSE",
             lifecycle_state="AVAILABLE",
@@ -273,7 +274,7 @@ def sample_inventory() -> Inventory:
             vm_cluster_id=vm_clusters[1].id,
             vm_cluster_name=vm_clusters[1].display_name,
             db_name="WAREHOUSE",
-            db_unique_name="WAREHOUSE_uk1",
+            db_unique_name="WAREHOUSE_fr1",
             db_workload="DW",
             time_created="2024-08-15T11:15:00+00:00",
             last_backup_timestamp="2026-05-08T02:30:00+00:00",
@@ -284,7 +285,7 @@ def sample_inventory() -> Inventory:
             ncharacter_set="AL16UTF16",
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/db/databases/"
-                f"ocid1.database.demo.db2?tenant={tenant}&region=uk-london-1"
+                f"ocid1.database.demo.db2?tenant={tenant}&region={region}"
             ),
         ),
     ]
@@ -292,8 +293,8 @@ def sample_inventory() -> Inventory:
     pluggable_databases = [
         PluggableDatabase(
             id="ocid1.pluggabledatabase.demo.pdb1",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster1",
+            region=region,
+            compartment_id="ocid1.compartment.demo.billing",
             compartment_path="ExaCC:production:billing",
             display_name="BILLINGPDB",
             lifecycle_state="AVAILABLE",
@@ -311,13 +312,13 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/db/"
                 f"pluggable-databases/ocid1.pluggabledatabase.demo.pdb1"
-                f"?tenant={tenant}&region=uk-london-1"
+                f"?tenant={tenant}&region={region}"
             ),
         ),
         PluggableDatabase(
             id="ocid1.pluggabledatabase.demo.pdb2",
-            region="uk-london-1",
-            compartment_id="ocid1.compartment.demo.cluster2",
+            region=region,
+            compartment_id="ocid1.compartment.demo.warehouse",
             compartment_path="ExaCC:production:warehouse",
             display_name="WAREHOUSEPDB",
             lifecycle_state="AVAILABLE",
@@ -335,7 +336,7 @@ def sample_inventory() -> Inventory:
             console_url=(
                 f"https://console.{home_region}.oraclecloud.com/db/"
                 f"pluggable-databases/ocid1.pluggabledatabase.demo.pdb2"
-                f"?tenant={tenant}&region=uk-london-1"
+                f"?tenant={tenant}&region={region}"
             ),
         ),
     ]
@@ -344,7 +345,7 @@ def sample_inventory() -> Inventory:
         tenant_name=tenant,
         home_region=home_region,
         generated_at=generated_at,
-        regions=["uk-london-1", "eu-frankfurt-1"],
+        regions=[region],
         compartments=compartments,
         infrastructures=infrastructures,
         vm_clusters=vm_clusters,

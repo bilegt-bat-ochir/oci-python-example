@@ -26,6 +26,10 @@ METRIC_INTERVALS = {
 COST_GRANULARITIES = {"HOURLY", "DAILY", "MONTHLY"}
 COST_QUERY_TYPES = {"COST", "USAGE"}
 MAX_HOURLY_COST_RANGE = timedelta(hours=36)
+DEMO_COST_SKUS = (
+    ("Database Exadata Cloud at Customer - OCPU BYOL", 0.11),
+    ("Database Exadata Cloud at Customer - OCPU", 0.42),
+)
 
 
 def list_oci_profiles(config_file: str = "~/.oci/config") -> list[str]:
@@ -213,6 +217,21 @@ def sample_database_metrics(
     return metrics
 
 
+def demo_cost_sources() -> list[Dict[str, Any]]:
+    inventory = sample_inventory()
+    sources: list[Dict[str, Any]] = []
+    for index, cluster in enumerate(inventory.vm_clusters):
+        sku_name, hourly_rate = DEMO_COST_SKUS[index % len(DEMO_COST_SKUS)]
+        sources.append(
+            {
+                "sku_name": sku_name,
+                "hourly_rate": hourly_rate,
+                "cluster": cluster,
+            }
+        )
+    return sources
+
+
 def sample_cost_analysis(
     *,
     start_time: datetime,
@@ -220,46 +239,58 @@ def sample_cost_analysis(
     granularity: str,
     query_type: str,
 ) -> Dict[str, Any]:
+    sources = demo_cost_sources()
     sku_names = [
-        "Database Exadata Cloud at Customer - OCPU BYOL",
-        "Database Exadata Cloud at Customer - OCPU",
+        sku_name
+        for sku_name, _rate in DEMO_COST_SKUS
+        if any(source["sku_name"] == sku_name for source in sources)
     ]
-    usage_values = {
-        sku_names[0]: 384.0,
-        sku_names[1]: 2592.0,
-    }
-    cost_rates = {
-        sku_names[0]: 0.11,
-        sku_names[1]: 0.42,
-    }
 
     periods = []
+    details = []
     cursor = start_time
-    index = 0
     while cursor < end_time and len(periods) < 750:
         if granularity == "HOURLY":
             next_cursor = min(cursor + timedelta(hours=1), end_time)
-            scale = 1 / 24
         elif granularity == "MONTHLY":
             year = cursor.year + (1 if cursor.month == 12 else 0)
             month = 1 if cursor.month == 12 else cursor.month + 1
             next_cursor = min(cursor.replace(year=year, month=month, day=1), end_time)
-            scale = max(1, (next_cursor - cursor).days)
         else:
             next_cursor = min(cursor + timedelta(days=1), end_time)
-            scale = 1
-        rows = {}
+        period_hours = max(0.0, (next_cursor - cursor).total_seconds() / 3600)
+        rows = {sku_name: 0.0 for sku_name in sku_names}
         total = 0.0
-        for sku_index, sku_name in enumerate(sku_names):
-            wave = 1 + math.sin((index + sku_index) / 3.0) * 0.08
-            usage_value = usage_values[sku_name] * scale * wave
+        for source in sources:
+            cluster = source["cluster"]
+            sku_name = source["sku_name"]
+            usage_value = cluster.cpus_enabled * period_hours
+            cost_value = usage_value * source["hourly_rate"]
             value = (
                 usage_value
                 if query_type == "USAGE"
-                else usage_value * cost_rates[sku_name]
+                else cost_value
             )
-            rows[sku_name] = round(value, 6)
+            rows[sku_name] = round(rows.get(sku_name, 0.0) + value, 6)
             total += value
+            details.append(
+                {
+                    "period_start": cursor.isoformat(),
+                    "period_end": next_cursor.isoformat(),
+                    "sku_name": sku_name,
+                    "sku_part_number": "DEMO-SKU",
+                    "service": "Database",
+                    "resource_name": cluster.display_name,
+                    "resource_id": cluster.id,
+                    "region": cluster.region,
+                    "compartment_name": cluster.compartment_path,
+                    "computed_amount": round(cost_value, 6),
+                    "computed_quantity": round(usage_value, 6),
+                    "value": round(value, 6),
+                    "unit": "OCPU Hours",
+                    "currency": "USD",
+                }
+            )
         periods.append(
             {
                 "period": cursor.isoformat(),
@@ -268,32 +299,6 @@ def sample_cost_analysis(
             }
         )
         cursor = next_cursor
-        index += 1
-
-    details = []
-    for period in periods:
-        for sku_name, value in period["series"].items():
-            usage_value = value if query_type == "USAGE" else value / cost_rates[sku_name]
-            details.append(
-                {
-                    "period_start": period["period"],
-                    "period_end": "",
-                    "sku_name": sku_name,
-                    "sku_part_number": "DEMO-SKU",
-                    "service": "Database",
-                    "resource_name": "ExaCC OCPU",
-                    "resource_id": "",
-                    "region": "eu-frankfurt-1",
-                    "compartment_name": "ExaCC",
-                    "computed_amount": round(
-                        usage_value * cost_rates[sku_name], 6
-                    ),
-                    "computed_quantity": round(usage_value, 6),
-                    "value": value,
-                    "unit": "OCPU Hours",
-                    "currency": "USD",
-                }
-            )
 
     series = [
         {
@@ -319,32 +324,54 @@ def sample_cost_analysis(
         "series_names": sku_names,
         "periods": periods,
         "series": series,
-        "details": details,
+        "details": sorted(
+            details,
+            key=lambda row: (
+                row.get("period_start", ""),
+                row.get("resource_name", ""),
+            ),
+        ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "filter": "Database Exadata Cloud@Customer OCPU and OCPU BYOL",
     }
 
 
 def sample_budgets() -> Dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    cycle_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    next_month = cycle_start.replace(
+        year=cycle_start.year + (1 if cycle_start.month == 12 else 0),
+        month=1 if cycle_start.month == 12 else cycle_start.month + 1,
+    )
+    hourly_cost = sum(
+        source["cluster"].cpus_enabled * source["hourly_rate"]
+        for source in demo_cost_sources()
+    )
+    elapsed_hours = max(0.0, (now - cycle_start).total_seconds() / 3600)
+    cycle_hours = max(1.0, (next_month - cycle_start).total_seconds() / 3600)
+    actual_spend = round(hourly_cost * elapsed_hours, 2)
+    forecasted_spend = round(hourly_cost * cycle_hours, 2)
+    amount = round(forecasted_spend * 1.15, 2)
+    percent_used = round((actual_spend / amount) * 100, 2) if amount else 0.0
     return {
         "tenant_name": "demo-tenant",
         "tenancy_id": "ocid1.tenancy.demo",
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now.isoformat(),
         "budgets": [
             {
                 "id": "ocid1.budget.demo.exacc",
                 "display_name": "ExaCC monthly guardrail",
-                "description": "Demo budget for Exadata Cloud@Customer OCPU spend.",
-                "amount": 150000.0,
-                "actual_spend": 84320.0,
-                "forecasted_spend": 118400.0,
-                "percent_used": 56.21,
+                "description": "Demo budget from sample VM cluster enabled OCPUs.",
+                "amount": amount,
+                "actual_spend": actual_spend,
+                "forecasted_spend": forecasted_spend,
+                "percent_used": percent_used,
                 "reset_period": "MONTHLY",
                 "target_type": "COMPARTMENT",
                 "targets": ["ocid1.compartment.demo.exacc"],
                 "lifecycle_state": "ACTIVE",
                 "alert_rule_count": 2,
-                "time_spend_computed": datetime.now(timezone.utc).isoformat(),
+                "time_spend_computed": now.isoformat(),
                 "time_created": "2026-01-01T00:00:00+00:00",
             }
         ],
