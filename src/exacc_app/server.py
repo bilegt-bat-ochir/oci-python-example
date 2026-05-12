@@ -23,6 +23,9 @@ METRIC_INTERVALS = {
     "1h": timedelta(hours=1),
     "1d": timedelta(days=1),
 }
+COST_GRANULARITIES = {"HOURLY", "DAILY", "MONTHLY"}
+COST_QUERY_TYPES = {"COST", "USAGE"}
+MAX_HOURLY_COST_RANGE = timedelta(hours=36)
 
 
 def list_oci_profiles(config_file: str = "~/.oci/config") -> list[str]:
@@ -51,6 +54,31 @@ def parse_metric_time(value: Any, fallback: datetime) -> datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def parse_cost_time(value: Any, fallback: datetime, *, end_of_day: bool = False) -> datetime:
+    if not value:
+        return fallback
+    raw_value = str(value).strip()
+    try:
+        if len(raw_value) == 10:
+            parsed = datetime.fromisoformat(raw_value).replace(tzinfo=timezone.utc)
+            if end_of_day:
+                parsed += timedelta(days=1)
+        else:
+            parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise OCIAppError(f"Invalid cost date '{value}'. Use YYYY-MM-DD format.") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def default_cost_window() -> tuple[datetime, datetime]:
+    now = datetime.now(timezone.utc)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return start, end
 
 
 def sample_vm_cluster_metrics(
@@ -185,6 +213,144 @@ def sample_database_metrics(
     return metrics
 
 
+def sample_cost_analysis(
+    *,
+    start_time: datetime,
+    end_time: datetime,
+    granularity: str,
+    query_type: str,
+) -> Dict[str, Any]:
+    sku_names = [
+        "Database Exadata Cloud at Customer - OCPU BYOL",
+        "Database Exadata Cloud at Customer - OCPU",
+    ]
+    usage_values = {
+        sku_names[0]: 384.0,
+        sku_names[1]: 2592.0,
+    }
+    cost_rates = {
+        sku_names[0]: 0.11,
+        sku_names[1]: 0.42,
+    }
+
+    periods = []
+    cursor = start_time
+    index = 0
+    while cursor < end_time and len(periods) < 750:
+        if granularity == "HOURLY":
+            next_cursor = min(cursor + timedelta(hours=1), end_time)
+            scale = 1 / 24
+        elif granularity == "MONTHLY":
+            year = cursor.year + (1 if cursor.month == 12 else 0)
+            month = 1 if cursor.month == 12 else cursor.month + 1
+            next_cursor = min(cursor.replace(year=year, month=month, day=1), end_time)
+            scale = max(1, (next_cursor - cursor).days)
+        else:
+            next_cursor = min(cursor + timedelta(days=1), end_time)
+            scale = 1
+        rows = {}
+        total = 0.0
+        for sku_index, sku_name in enumerate(sku_names):
+            wave = 1 + math.sin((index + sku_index) / 3.0) * 0.08
+            usage_value = usage_values[sku_name] * scale * wave
+            value = (
+                usage_value
+                if query_type == "USAGE"
+                else usage_value * cost_rates[sku_name]
+            )
+            rows[sku_name] = round(value, 6)
+            total += value
+        periods.append(
+            {
+                "period": cursor.isoformat(),
+                "series": rows,
+                "total": round(total, 6),
+            }
+        )
+        cursor = next_cursor
+        index += 1
+
+    details = []
+    for period in periods:
+        for sku_name, value in period["series"].items():
+            usage_value = value if query_type == "USAGE" else value / cost_rates[sku_name]
+            details.append(
+                {
+                    "period_start": period["period"],
+                    "period_end": "",
+                    "sku_name": sku_name,
+                    "sku_part_number": "DEMO-SKU",
+                    "service": "Database",
+                    "resource_name": "ExaCC OCPU",
+                    "resource_id": "",
+                    "region": "eu-frankfurt-1",
+                    "compartment_name": "ExaCC",
+                    "computed_amount": round(
+                        usage_value * cost_rates[sku_name], 6
+                    ),
+                    "computed_quantity": round(usage_value, 6),
+                    "value": value,
+                    "unit": "OCPU Hours",
+                    "currency": "USD",
+                }
+            )
+
+    series = [
+        {
+            "label": sku_name,
+            "total": round(sum(period["series"][sku_name] for period in periods), 6),
+            "points": [
+                {"period": period["period"], "value": period["series"][sku_name]}
+                for period in periods
+            ],
+        }
+        for sku_name in sku_names
+    ]
+    return {
+        "tenant_name": "demo-tenant",
+        "tenancy_id": "ocid1.tenancy.demo",
+        "start_time": start_time.isoformat(),
+        "end_time": end_time.isoformat(),
+        "granularity": granularity,
+        "query_type": query_type,
+        "currency": "USD",
+        "unit": "OCPU Hours",
+        "total": round(sum(period["total"] for period in periods), 6),
+        "series_names": sku_names,
+        "periods": periods,
+        "series": series,
+        "details": details,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filter": "Database Exadata Cloud@Customer OCPU and OCPU BYOL",
+    }
+
+
+def sample_budgets() -> Dict[str, Any]:
+    return {
+        "tenant_name": "demo-tenant",
+        "tenancy_id": "ocid1.tenancy.demo",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "budgets": [
+            {
+                "id": "ocid1.budget.demo.exacc",
+                "display_name": "ExaCC monthly guardrail",
+                "description": "Demo budget for Exadata Cloud@Customer OCPU spend.",
+                "amount": 150000.0,
+                "actual_spend": 84320.0,
+                "forecasted_spend": 118400.0,
+                "percent_used": 56.21,
+                "reset_period": "MONTHLY",
+                "target_type": "COMPARTMENT",
+                "targets": ["ocid1.compartment.demo.exacc"],
+                "lifecycle_state": "ACTIVE",
+                "alert_rule_count": 2,
+                "time_spend_computed": datetime.now(timezone.utc).isoformat(),
+                "time_created": "2026-01-01T00:00:00+00:00",
+            }
+        ],
+    }
+
+
 def serve_inventory_dashboard(
     inventory: Inventory, *, host: str = "127.0.0.1", port: int = 8000
 ) -> None:
@@ -215,6 +381,12 @@ def serve_inventory_dashboard(
                 return
             if parsed.path == "/api/database-metrics":
                 self._handle_database_metrics()
+                return
+            if parsed.path == "/api/cost-analysis":
+                self._handle_cost_analysis()
+                return
+            if parsed.path == "/api/budgets":
+                self._handle_budgets()
                 return
             self._send_json(404, {"error": "Not found"})
 
@@ -385,6 +557,80 @@ def serve_inventory_dashboard(
                 )
                 return
             self._send_json(200, metrics)
+
+        def _handle_cost_analysis(self) -> None:
+            try:
+                data = self._read_json()
+                default_start, default_end = default_cost_window()
+                start_time = parse_cost_time(data.get("start_date"), default_start)
+                end_time = parse_cost_time(
+                    data.get("end_date"), default_end, end_of_day=True
+                )
+                if start_time >= end_time:
+                    raise OCIAppError("Cost start date must be before end date.")
+
+                granularity = str(data.get("granularity") or "DAILY").upper()
+                if granularity not in COST_GRANULARITIES:
+                    raise OCIAppError("Granularity must be HOURLY, DAILY, or MONTHLY.")
+                if granularity == "HOURLY" and end_time - start_time > MAX_HOURLY_COST_RANGE:
+                    raise OCIAppError(
+                        "Hourly cost analysis supports up to 36 hours. "
+                        "Choose a single-day range or use daily/monthly granularity."
+                    )
+                query_type = str(data.get("query_type") or "COST").upper()
+                if query_type not in COST_QUERY_TYPES:
+                    raise OCIAppError("Cost view must be COST or USAGE.")
+
+                if data.get("sample"):
+                    analysis = sample_cost_analysis(
+                        start_time=start_time,
+                        end_time=end_time,
+                        granularity=granularity,
+                        query_type=query_type,
+                    )
+                else:
+                    profile = str(data.get("profile", "")).strip()
+                    if not profile:
+                        raise OCIAppError("OCI profile is required.")
+                    client = OCIInventoryClient(
+                        profile=profile,
+                        config_file=str(data.get("config_file") or "~/.oci/config"),
+                    )
+                    analysis = client.fetch_cost_analysis(
+                        start_time=start_time,
+                        end_time=end_time,
+                        granularity=granularity,
+                        query_type=query_type,
+                    )
+            except OCIAppError as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": f"Could not load cost analysis: {exc}"})
+                return
+            self._send_json(200, analysis)
+
+        def _handle_budgets(self) -> None:
+            try:
+                data = self._read_json()
+                if data.get("sample"):
+                    budgets = sample_budgets()
+                else:
+                    profile = str(data.get("profile", "")).strip()
+                    if not profile:
+                        raise OCIAppError("OCI profile is required.")
+                    client = OCIInventoryClient(
+                        profile=profile,
+                        config_file=str(data.get("config_file") or "~/.oci/config"),
+                    )
+                    budgets = client.fetch_budgets()
+            except OCIAppError as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": f"Could not load budgets: {exc}"})
+                return
+            self._send_json(200, budgets)
 
         def _read_json(self) -> Dict[str, Any]:
             length = int(self.headers.get("Content-Length", "0") or "0")

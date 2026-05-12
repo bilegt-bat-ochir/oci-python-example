@@ -1008,6 +1008,50 @@ def render_dashboard(inventory: Inventory) -> str:
       font-size: 12px;
     }}
 
+    .cost-controls {{
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(4, minmax(140px, 1fr)) auto;
+      gap: 12px;
+      align-items: end;
+    }}
+
+    .cost-chart {{
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 12px;
+    }}
+
+    .cost-chart svg {{
+      width: 100%;
+      height: auto;
+      display: block;
+    }}
+
+    .cost-legend {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+
+    .budget-progress {{
+      height: 8px;
+      min-width: 120px;
+      background: #e8edf4;
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 6px;
+    }}
+
+    .budget-progress span {{
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #1f7a4d, #a15c0b);
+    }}
+
     .legend-item {{
       display: inline-flex;
       align-items: center;
@@ -1071,6 +1115,9 @@ def render_dashboard(inventory: Inventory) -> str:
       .chart-grid {{
         grid-template-columns: 1fr;
       }}
+      .cost-controls {{
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }}
     }}
 
     @media (max-width: 560px) {{
@@ -1078,6 +1125,7 @@ def render_dashboard(inventory: Inventory) -> str:
       .metrics {{ grid-template-columns: 1fr; }}
       .detail-grid {{ grid-template-columns: 1fr; }}
       .metric-controls {{ grid-template-columns: 1fr; }}
+      .cost-controls {{ grid-template-columns: 1fr; }}
       .chart-summary {{ text-align: left; }}
       .metric-chart-head {{ flex-direction: column; }}
       .brand h1 {{ font-size: 15px; }}
@@ -1124,6 +1172,10 @@ def render_dashboard(inventory: Inventory) -> str:
         <button class="tab" type="button" data-view="autonomous_vm_clusters" aria-selected="false">
           <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3l8 4v6c0 4.5-3.2 7.4-8 8-4.8-.6-8-3.5-8-8V7l8-4z"></path><path d="M9 12l2 2 4-5"></path></svg>
           <span>Autonomous</span><span class="count" id="autoCount"></span>
+        </button>
+        <button class="tab" type="button" data-view="cost" aria-selected="false">
+          <svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6"></path></svg>
+          <span>Cost</span><span class="count" id="costCount"></span>
         </button>
       </nav>
       <form class="profile-loader" id="profileForm">
@@ -1185,7 +1237,18 @@ def render_dashboard(inventory: Inventory) -> str:
       detailFromView: "overview",
       inventorySource: {{ sample: false }},
       metricWindows: {{}},
-      metricLoads: {{}}
+      metricLoads: {{}},
+      cost: {{
+        loading: false,
+        error: "",
+        data: null,
+        budgetsLoading: false,
+        budgetsError: "",
+        budgets: null,
+        lastKey: "",
+        budgetsKey: "",
+        form: null
+      }}
     }};
 
     const icons = {{
@@ -1232,6 +1295,13 @@ def render_dashboard(inventory: Inventory) -> str:
       state.detailFromView = "overview";
       state.metricWindows = {{}};
       state.metricLoads = {{}};
+      state.cost.data = null;
+      state.cost.budgets = null;
+      state.cost.error = "";
+      state.cost.budgetsError = "";
+      state.cost.lastKey = "";
+      state.cost.budgetsKey = "";
+      state.cost.form = defaultCostForm();
       state.view = state.view === "detail" ? "overview" : state.view;
       document.title = `ExaCC Operations - ${{inventory.tenant_name || "Inventory"}}`;
       setCounts();
@@ -1408,6 +1478,7 @@ def render_dashboard(inventory: Inventory) -> str:
       document.getElementById("dbHomeCount").textContent = number(inventory.db_homes.length);
       document.getElementById("databaseCount").textContent = number(inventory.databases.length);
       document.getElementById("autoCount").textContent = number(inventory.autonomous_vm_clusters.length);
+      document.getElementById("costCount").textContent = "$";
     }}
 
     function apiAvailable() {{
@@ -1445,6 +1516,122 @@ def render_dashboard(inventory: Inventory) -> str:
         all_regions: document.getElementById("allRegionsInput").checked,
         ...extra
       }};
+    }}
+
+    function defaultCostForm() {{
+      const now = new Date();
+      const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+      return {{
+        startDate: start.toISOString().slice(0, 10),
+        endDate: today.toISOString().slice(0, 10),
+        granularity: "DAILY",
+        queryType: "COST"
+      }};
+    }}
+
+    function costForm() {{
+      if (!state.cost.form) {{
+        state.cost.form = defaultCostForm();
+      }}
+      return state.cost.form;
+    }}
+
+    function costSourcePayload() {{
+      return profilePayload({{ sample: Boolean(state.inventorySource && state.inventorySource.sample) }});
+    }}
+
+    function costKey(form = costForm()) {{
+      const source = costSourcePayload();
+      return `${{source.profile}}|${{source.config_file}}|${{Boolean(source.sample)}}|${{form.startDate}}|${{form.endDate}}|${{form.granularity}}|${{form.queryType}}`;
+    }}
+
+    function budgetKey() {{
+      const source = costSourcePayload();
+      return `${{source.profile}}|${{source.config_file}}|${{Boolean(source.sample)}}`;
+    }}
+
+    function costPayload() {{
+      const form = costForm();
+      return {{
+        ...costSourcePayload(),
+        start_date: form.startDate,
+        end_date: form.endDate,
+        granularity: form.granularity,
+        query_type: form.queryType
+      }};
+    }}
+
+    function hourlyCostRangeTooWide(form) {{
+      if (form.granularity !== "HOURLY") return false;
+      const start = new Date(`${{form.startDate}}T00:00:00Z`);
+      const endExclusive = new Date(`${{form.endDate}}T00:00:00Z`);
+      endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(endExclusive.getTime())) return false;
+      return endExclusive.getTime() - start.getTime() > 36 * 60 * 60 * 1000;
+    }}
+
+    async function loadCostAnalysis(force = false) {{
+      const key = costKey();
+      if (!force && (state.cost.loading || state.cost.lastKey === key)) return;
+      if (!apiAvailable()) {{
+        state.cost.error = "Local server unavailable";
+        render();
+        return;
+      }}
+      if (hourlyCostRangeTooWide(costForm())) {{
+        state.cost.loading = false;
+        state.cost.error = "Hourly cost analysis supports a single date. Choose daily/monthly for longer ranges.";
+        state.cost.lastKey = key;
+        render();
+        return;
+      }}
+      state.cost.loading = true;
+      state.cost.error = "";
+      state.cost.lastKey = key;
+      render();
+      try {{
+        const response = await fetch("/api/cost-analysis", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(costPayload())
+        }});
+        state.cost.data = await readJson(response);
+      }} catch (error) {{
+        state.cost.error = error.message;
+        state.cost.data = null;
+      }} finally {{
+        state.cost.loading = false;
+        if (state.view === "cost") render();
+      }}
+    }}
+
+    async function loadBudgets(force = false) {{
+      const key = budgetKey();
+      if (!force && (state.cost.budgetsLoading || state.cost.budgetsKey === key)) return;
+      if (!apiAvailable()) {{
+        state.cost.budgetsError = "Local server unavailable";
+        render();
+        return;
+      }}
+      state.cost.budgetsLoading = true;
+      state.cost.budgetsError = "";
+      state.cost.budgetsKey = key;
+      render();
+      try {{
+        const response = await fetch("/api/budgets", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(costSourcePayload())
+        }});
+        state.cost.budgets = await readJson(response);
+      }} catch (error) {{
+        state.cost.budgetsError = error.message;
+        state.cost.budgets = null;
+      }} finally {{
+        state.cost.budgetsLoading = false;
+        if (state.view === "cost") render();
+      }}
     }}
 
     async function refreshProfiles() {{
@@ -1889,6 +2076,272 @@ def render_dashboard(inventory: Inventory) -> str:
         ${{metric("OCPU Capacity", `${{number(current.ocpus)}} / ${{number(current.capacity)}}`, `${{current.capacityPct || 0}}% enabled`)}}
         ${{metric("Data Stores", number(current.databases), `${{number(current.dbHomes)}} DB homes, ${{number(current.pdbs)}} PDBs`)}}
       </div>`;
+    }}
+
+    function formatCostPeriod(value, granularity) {{
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "-";
+      const options = granularity === "HOURLY"
+        ? {{ timeZone: "UTC", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }}
+        : granularity === "MONTHLY"
+          ? {{ timeZone: "UTC", month: "short", year: "numeric" }}
+          : {{ timeZone: "UTC", month: "short", day: "2-digit", year: "numeric" }};
+      return new Intl.DateTimeFormat(undefined, options).format(date);
+    }}
+
+    function formatCostNumber(value, maximumFractionDigits = 2) {{
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return "-";
+      return new Intl.NumberFormat(undefined, {{
+        minimumFractionDigits: 0,
+        maximumFractionDigits
+      }}).format(numeric);
+    }}
+
+    function formatCostValue(value, queryType, currency = "USD", unit = "units") {{
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return "-";
+      if (queryType === "COST") {{
+        try {{
+          return new Intl.NumberFormat(undefined, {{
+            style: "currency",
+            currency: currency || "USD",
+            maximumFractionDigits: 2
+          }}).format(numeric);
+        }} catch (error) {{
+          return `${{formatCostNumber(numeric)}} ${{escapeHtml(currency || "USD")}}`;
+        }}
+      }}
+      return `${{formatCostNumber(numeric, 2)}} ${{escapeHtml(unit || "units")}}`;
+    }}
+
+    function costSeriesNames(data) {{
+      const names = data && data.series_names && data.series_names.length
+        ? data.series_names
+        : (data && data.series ? data.series.map((item) => item.label || item.name || "Unknown SKU") : []);
+      return Array.from(new Set(names));
+    }}
+
+    function costSeriesTotal(data, name) {{
+      const match = (data.series || []).find((item) => item.label === name || item.name === name);
+      if (match && Number.isFinite(Number(match.total))) return Number(match.total);
+      return (data.periods || []).reduce((total, period) => total + Number((period.series || {{}})[name] || 0), 0);
+    }}
+
+    function costPeriodValue(period, name) {{
+      return Number((period.series || {{}})[name] || 0);
+    }}
+
+    function renderCostControls() {{
+      const form = costForm();
+      const status = state.cost.loading
+        ? "Loading cost analysis"
+        : state.cost.error
+          ? state.cost.error
+          : state.cost.data
+            ? `${{state.cost.data.filter || "Database Exadata Cloud@Customer OCPU"}} | generated ${{state.cost.data.generated_at || "-"}}`
+            : "Cost analysis pending";
+      const statusTone = state.cost.error ? "critical" : "neutral";
+      const granularityOptions = [
+        ["HOURLY", "Hourly"],
+        ["DAILY", "Daily"],
+        ["MONTHLY", "Monthly"]
+      ].map(([value, label]) => `<option value="${{value}}"${{form.granularity === value ? " selected" : ""}}>${{label}}</option>`).join("");
+      const queryOptions = [
+        ["COST", "Cost"],
+        ["USAGE", "Usage"]
+      ].map(([value, label]) => `<option value="${{value}}"${{form.queryType === value ? " selected" : ""}}>${{label}}</option>`).join("");
+      return `<section class="panel">
+        <div class="panel-header"><h3>Cost Monitoring</h3><span>Database Exadata Cloud@Customer OCPU</span></div>
+        <div class="cost-controls">
+          <label class="metric-control"><span>Start date</span><input class="cost-start" type="date" value="${{escapeHtml(form.startDate)}}"></label>
+          <label class="metric-control"><span>End date</span><input class="cost-end" type="date" value="${{escapeHtml(form.endDate)}}"></label>
+          <label class="metric-control"><span>Granularity</span><select class="cost-granularity">${{granularityOptions}}</select></label>
+          <label class="metric-control"><span>View</span><select class="cost-query">${{queryOptions}}</select></label>
+          <div class="metric-actions">
+            <button class="metric-apply-button" type="button" data-cost-action="apply" ${{state.cost.loading ? "disabled" : ""}}>${{icons.refresh}}<span>Apply</span></button>
+          </div>
+        </div>
+        <div class="metric-status" data-tone="${{statusTone}}">${{escapeHtml(status)}}</div>
+      </section>`;
+    }}
+
+    function applyCostControls(container) {{
+      const nextForm = {{
+        startDate: container.querySelector(".cost-start").value,
+        endDate: container.querySelector(".cost-end").value,
+        granularity: container.querySelector(".cost-granularity").value || "DAILY",
+        queryType: container.querySelector(".cost-query").value || "COST"
+      }};
+      if (!nextForm.startDate || !nextForm.endDate) {{
+        state.cost.error = "Start date and end date are required";
+        render();
+        return;
+      }}
+      const start = new Date(`${{nextForm.startDate}}T00:00:00Z`);
+      const end = new Date(`${{nextForm.endDate}}T00:00:00Z`);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {{
+        state.cost.error = "Start date must be on or before end date";
+        render();
+        return;
+      }}
+      if (hourlyCostRangeTooWide(nextForm)) {{
+        state.cost.error = "Hourly cost analysis supports a single date. Choose daily/monthly for longer ranges.";
+        render();
+        return;
+      }}
+      state.cost.form = nextForm;
+      state.cost.data = null;
+      state.cost.lastKey = "";
+      loadCostAnalysis(true);
+    }}
+
+    function renderCostSummary(data) {{
+      const seriesNames = costSeriesNames(data);
+      const queryType = data.query_type || costForm().queryType;
+      const totalLabel = queryType === "COST" ? "Total Cost" : "Total Usage";
+      const firstDate = data.periods && data.periods.length ? data.periods[0].period : data.start_time;
+      const lastDate = data.periods && data.periods.length ? data.periods[data.periods.length - 1].period : data.end_time;
+      return `<div class="metrics">
+        ${{metric(totalLabel, formatCostValue(data.total, queryType, data.currency, data.unit), escapeHtml(data.filter || "Filtered to ExaCC OCPU SKUs"))}}
+        ${{metric("Periods", number((data.periods || []).length), `${{formatCostPeriod(firstDate, data.granularity)}} - ${{formatCostPeriod(lastDate, data.granularity)}}`)}}
+        ${{metric("SKU Series", number(seriesNames.length), seriesNames.length ? escapeHtml(seriesNames.join(", ")) : "No OCPU rows")}}
+        ${{metric("Usage Rows", number((data.details || []).length), escapeHtml(data.granularity || "DAILY"))}}
+      </div>`;
+    }}
+
+    function renderCostChart(data) {{
+      const periods = data.periods || [];
+      const seriesNames = costSeriesNames(data);
+      const queryType = data.query_type || costForm().queryType;
+      if (!periods.length || !seriesNames.length) {{
+        return `<section class="panel">
+          <div class="panel-header"><h3>${{queryType === "COST" ? "Cost" : "Usage"}} by Date (UTC)</h3><span>${{escapeHtml(data.granularity || "")}}</span></div>
+          <div class="empty">No cost or usage rows returned for the ExaCC OCPU SKU filter</div>
+        </section>`;
+      }}
+      const maxValue = Math.max(1, ...periods.flatMap((period) => [
+        Number(period.total || 0),
+        ...seriesNames.map((name) => costPeriodValue(period, name))
+      ]));
+      const chart = {{ left: 76, top: 20, width: 780, height: 210 }};
+      const xFor = (index) => chart.left + (periods.length === 1 ? chart.width / 2 : (index / (periods.length - 1)) * chart.width);
+      const yFor = (value) => chart.top + (1 - Math.max(0, Number(value || 0)) / maxValue) * chart.height;
+      const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {{
+        const y = chart.top + (1 - ratio) * chart.height;
+        const label = formatCostValue(maxValue * ratio, queryType, data.currency, data.unit);
+        return `<line class="chart-gridline" x1="${{chart.left}}" y1="${{y.toFixed(1)}}" x2="${{chart.left + chart.width}}" y2="${{y.toFixed(1)}}"></line><text class="chart-axis" x="8" y="${{(y + 3).toFixed(1)}}">${{escapeHtml(label)}}</text>`;
+      }}).join("");
+      const paths = seriesNames.map((name, index) => {{
+        const color = chartColors[index % chartColors.length];
+        const path = periods.map((period, pointIndex) => {{
+          const x = xFor(pointIndex);
+          const y = yFor(costPeriodValue(period, name));
+          return `${{pointIndex ? "L" : "M"}} ${{x.toFixed(1)}} ${{y.toFixed(1)}}`;
+        }}).join(" ");
+        return `<path d="${{path}}" fill="none" stroke="${{color}}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>`;
+      }}).join("");
+      const dots = seriesNames.map((name, index) => {{
+        const color = chartColors[index % chartColors.length];
+        return periods.map((period, pointIndex) => {{
+          const value = costPeriodValue(period, name);
+          const label = `${{name}} | ${{formatCostPeriod(period.period, data.granularity)}} | ${{formatCostValue(value, queryType, data.currency, data.unit)}}`;
+          return `<circle cx="${{xFor(pointIndex).toFixed(1)}}" cy="${{yFor(value).toFixed(1)}}" r="4" fill="${{color}}"><title>${{escapeHtml(label)}}</title></circle>`;
+        }}).join("");
+      }}).join("");
+      const legend = seriesNames.map((name, index) => `<span class="legend-item"><span class="legend-dot" style="background:${{chartColors[index % chartColors.length]}}"></span>${{escapeHtml(name)}}</span>`).join("");
+      return `<section class="panel">
+        <div class="panel-header"><h3>${{queryType === "COST" ? "Cost" : "Usage"}} by Date (UTC)</h3><span>${{escapeHtml(data.granularity || "")}}</span></div>
+        <div class="cost-chart">
+          <svg viewBox="0 0 920 285" role="img" aria-label="${{escapeHtml(queryType === "COST" ? "Cost analysis chart" : "Usage analysis chart")}}">
+            ${{grid}}
+            <line class="chart-gridline" x1="${{chart.left}}" y1="${{chart.top + chart.height}}" x2="${{chart.left + chart.width}}" y2="${{chart.top + chart.height}}"></line>
+            ${{paths}}
+            ${{dots}}
+            <text class="chart-axis" x="${{chart.left}}" y="268">${{escapeHtml(formatCostPeriod(periods[0].period, data.granularity))}}</text>
+            <text class="chart-axis" x="${{chart.left + chart.width - 150}}" y="268">${{escapeHtml(formatCostPeriod(periods[periods.length - 1].period, data.granularity))}}</text>
+          </svg>
+          <div class="cost-legend">${{legend}}</div>
+        </div>
+      </section>`;
+    }}
+
+    function renderCostDetails(data) {{
+      const periods = data.periods || [];
+      const seriesNames = costSeriesNames(data);
+      const queryType = data.query_type || costForm().queryType;
+      const header = `<th>Date (UTC)</th>${{seriesNames.map((name) => `<th title="${{escapeHtml(name)}}">${{escapeHtml(name)}}</th>`).join("")}}<th>Total</th>`;
+      const rows = periods.map((period) => `<tr>
+        <td>${{escapeHtml(formatCostPeriod(period.period, data.granularity))}}</td>
+        ${{seriesNames.map((name) => `<td>${{formatCostValue(costPeriodValue(period, name), queryType, data.currency, data.unit)}}</td>`).join("")}}
+        <td><strong>${{formatCostValue(period.total, queryType, data.currency, data.unit)}}</strong></td>
+      </tr>`).join("");
+      const totalRow = seriesNames.length ? `<tr>
+        <td><strong>Total</strong></td>
+        ${{seriesNames.map((name) => `<td><strong>${{formatCostValue(costSeriesTotal(data, name), queryType, data.currency, data.unit)}}</strong></td>`).join("")}}
+        <td><strong>${{formatCostValue(data.total, queryType, data.currency, data.unit)}}</strong></td>
+      </tr>` : "";
+      return tablePanel("Cost Analysis Details", `${{rows}}${{totalRow}}`, header, seriesNames.length + 2);
+    }}
+
+    function renderUsageReports(data) {{
+      const rows = (data.details || []).slice(0, 250).map((item) => `<tr>
+        <td>${{escapeHtml(formatCostPeriod(item.period_start, data.granularity))}}</td>
+        <td>${{escapeHtml(item.sku_name || "Unknown SKU")}}<div class="muted">${{escapeHtml(item.sku_part_number || "")}}</div></td>
+        <td>${{escapeHtml(item.service || "-")}}</td>
+        <td>${{escapeHtml(item.region || "-")}}</td>
+        <td>${{formatCostValue(item.computed_quantity, "USAGE", data.currency, item.unit || data.unit)}}</td>
+        <td>${{formatCostValue(item.computed_amount, "COST", item.currency || data.currency, data.unit)}}</td>
+        <td>${{escapeHtml(item.resource_name || item.compartment_name || "-")}}</td>
+      </tr>`).join("");
+      return tablePanel("Usage Reports", rows, "<th>Date</th><th>SKU</th><th>Service</th><th>Region</th><th>Usage</th><th>Cost</th><th>Resource</th>", 7);
+    }}
+
+    function renderBudgetsPanel() {{
+      const data = state.cost.budgets;
+      const budgets = data && data.budgets ? data.budgets : [];
+      const status = state.cost.budgetsLoading
+        ? "Loading budgets"
+        : state.cost.budgetsError
+          ? state.cost.budgetsError
+          : data
+            ? `generated ${{data.generated_at || "-"}}`
+            : "Budgets pending";
+      const rows = budgets.map((item) => {{
+        const percent = Math.max(0, Math.min(100, Number(item.percent_used || 0)));
+        return `<tr>
+          <td><strong>${{escapeHtml(item.display_name || item.id)}}</strong><div class="muted">${{escapeHtml(item.description || item.id || "")}}</div></td>
+          <td>${{formatCostValue(item.amount, "COST", "USD")}}</td>
+          <td>${{formatCostValue(item.actual_spend, "COST", "USD")}}<div class="budget-progress" aria-hidden="true"><span style="width:${{percent}}%"></span></div></td>
+          <td>${{formatCostValue(item.forecasted_spend, "COST", "USD")}}</td>
+          <td>${{formatCostNumber(percent, 1)}}%</td>
+          <td>${{pill(item.lifecycle_state)}}<div class="muted">${{escapeHtml(item.reset_period || "-")}} | ${{number(item.alert_rule_count)}} alerts</div></td>
+        </tr>`;
+      }}).join("");
+      return `<section class="panel">
+        <div class="panel-header">
+          <h3>Budgets</h3>
+          <span>${{escapeHtml(status)}}</span>
+        </div>
+        <div class="table-wrap">
+          <table><thead><tr><th>Name</th><th>Amount</th><th>Actual Spend</th><th>Forecast</th><th>Used</th><th>Status</th></tr></thead>
+          <tbody>${{rows || '<tr><td class="empty" colspan="6">No budgets found</td></tr>'}}</tbody></table>
+        </div>
+      </section>`;
+    }}
+
+    function renderCostView() {{
+      const data = state.cost.data;
+      if (!data) {{
+        return `${{renderCostControls()}}<section class="panel"><div class="empty">${{state.cost.loading ? "Loading cost analysis" : "Cost analysis will appear here"}}</div></section>${{renderBudgetsPanel()}}`;
+      }}
+      return `${{renderCostControls()}}${{renderCostSummary(data)}}${{renderCostChart(data)}}${{renderCostDetails(data)}}${{renderUsageReports(data)}}${{renderBudgetsPanel()}}`;
+    }}
+
+    function maybeLoadCostView() {{
+      if (state.view !== "cost") return;
+      loadCostAnalysis();
+      loadBudgets();
     }}
 
     function renderCapacityPanel() {{
@@ -2347,7 +2800,8 @@ def render_dashboard(inventory: Inventory) -> str:
         vm_clusters: "VM Clusters",
         db_homes: "DB Homes",
         databases: "Databases",
-        autonomous_vm_clusters: "Autonomous VM Clusters"
+        autonomous_vm_clusters: "Autonomous VM Clusters",
+        cost: "Cost Monitoring"
       }};
       const detailItem = state.view === "detail" ? findResource(state.detailType, state.detailId) : null;
       document.getElementById("viewTitle").textContent = detailItem
@@ -2370,6 +2824,8 @@ def render_dashboard(inventory: Inventory) -> str:
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{dbHomeRows()}}`;
       }} else if (state.view === "databases") {{
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{databaseRows()}}`;
+      }} else if (state.view === "cost") {{
+        document.getElementById("content").innerHTML = renderCostView();
       }} else {{
         document.getElementById("content").innerHTML = `${{renderFilterBanner()}}${{renderMetrics()}}${{autonomousRows()}}`;
       }}
@@ -2380,6 +2836,7 @@ def render_dashboard(inventory: Inventory) -> str:
       if (state.view === "detail" && state.detailType === "database" && detailItem) {{
         maybeLoadDatabaseMetrics(detailItem);
       }}
+      maybeLoadCostView();
     }}
 
     function hideChartTooltip(chart) {{
@@ -2482,6 +2939,15 @@ def render_dashboard(inventory: Inventory) -> str:
           shiftMetricWindow(item, resourceType, 1);
         }} else if (action === "last-day") {{
           setLastDayMetricWindow(item, resourceType);
+        }}
+        return;
+      }}
+      const costButton = event.target.closest("[data-cost-action]");
+      if (costButton) {{
+        const action = costButton.dataset.costAction;
+        if (action === "apply") {{
+          const container = costButton.closest(".panel");
+          if (container) applyCostControls(container);
         }}
         return;
       }}

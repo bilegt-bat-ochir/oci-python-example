@@ -22,6 +22,9 @@ class OCIAppError(RuntimeError):
     """Raised when OCI configuration or SDK access prevents the app from running."""
 
 
+EXACC_COST_SKU_TERMS = ("database", "exadata", "cloud", "customer", "ocpu")
+
+
 class CompartmentResolver:
     def __init__(self, root_compartment_id: str, compartments: Iterable[Any]) -> None:
         self.root_compartment_id = root_compartment_id
@@ -254,6 +257,64 @@ class OCIInventoryClient:
             },
         }
 
+    def fetch_cost_analysis(
+        self,
+        *,
+        start_time: datetime,
+        end_time: datetime,
+        granularity: str,
+        query_type: str,
+    ) -> Dict[str, Any]:
+        context = self._load_account_context()
+        config = self._region_config(
+            context["config"], context["home_region"] or context["config"].get("region", "")
+        )
+        usage_client = self.oci.usage_api.UsageapiClient(config)
+        details = self.oci.usage_api.models.RequestSummarizedUsagesDetails(
+            tenant_id=context["tenancy_id"],
+            time_usage_started=start_time,
+            time_usage_ended=end_time,
+            granularity=granularity,
+            query_type=query_type,
+            is_aggregate_by_time=False,
+            group_by=["skuName"],
+        )
+        response = usage_client.request_summarized_usages(
+            request_summarized_usages_details=details,
+            retry_strategy=self.retry_strategy,
+        )
+        items = getattr(response.data, "items", []) or []
+        rows = [self._to_cost_row(item, query_type) for item in items]
+        rows = [row for row in rows if self._is_exacc_ocpu_sku(row.get("sku_name", ""))]
+        return self._to_cost_analysis_payload(
+            context=context,
+            start_time=start_time,
+            end_time=end_time,
+            granularity=granularity,
+            query_type=query_type,
+            rows=rows,
+        )
+
+    def fetch_budgets(self) -> Dict[str, Any]:
+        context = self._load_account_context()
+        config = self._region_config(
+            context["config"], context["home_region"] or context["config"].get("region", "")
+        )
+        budget_client = self.oci.budget.BudgetClient(config)
+        response = self.oci.pagination.list_call_get_all_results(
+            budget_client.list_budgets,
+            compartment_id=context["tenancy_id"],
+            target_type="ALL",
+            retry_strategy=self.retry_strategy,
+        )
+        budgets = [self._to_budget_row(item) for item in response.data]
+        return {
+            "tenant_name": context["tenant_name"],
+            "tenancy_id": context["tenancy_id"],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "budgets": budgets,
+        }
+
     def _load_context(self) -> Dict[str, Any]:
         try:
             config = self.oci.config.from_file(self.config_file, self.profile)
@@ -314,6 +375,42 @@ class OCIInventoryClient:
             "compartments": resolver,
             "raw_compartments": compartments,
             "compartment_ids": compartment_ids,
+        }
+
+    def _load_account_context(self) -> Dict[str, Any]:
+        try:
+            config = self.oci.config.from_file(self.config_file, self.profile)
+        except Exception as exc:
+            raise OCIAppError(
+                f"OCI profile '{self.profile}' was not found in {self.config_file}."
+            ) from exc
+
+        identity_client = self.oci.identity.IdentityClient(config)
+        user = identity_client.get_user(
+            config["user"], retry_strategy=self.retry_strategy
+        ).data
+        tenancy_id = user.compartment_id
+        tenancy = identity_client.get_tenancy(
+            tenancy_id, retry_strategy=self.retry_strategy
+        ).data
+        regions = self.oci.pagination.list_call_get_all_results(
+            identity_client.list_region_subscriptions,
+            tenancy_id=tenancy_id,
+            retry_strategy=self.retry_strategy,
+        ).data
+        home_region = next(
+            (
+                region.region_name
+                for region in regions
+                if getattr(region, "is_home_region", False)
+            ),
+            config.get("region", ""),
+        )
+        return {
+            "config": config,
+            "tenancy_id": tenancy_id,
+            "tenant_name": getattr(tenancy, "name", "") or tenancy_id,
+            "home_region": home_region,
         }
 
     def _to_compartments(self, context: Dict[str, Any]) -> List[Compartment]:
@@ -637,6 +734,144 @@ class OCIInventoryClient:
             "queries": queries,
             "series": sorted(series, key=lambda item: item.get("label", "")),
         }
+
+    def _to_cost_row(self, item: Any, query_type: str) -> Dict[str, Any]:
+        computed_amount = self._safe_float(getattr(item, "computed_amount", None))
+        computed_quantity = self._safe_float(getattr(item, "computed_quantity", None))
+        attributed_cost = self._safe_float(getattr(item, "attributed_cost", None))
+        attributed_usage = self._safe_float(getattr(item, "attributed_usage", None))
+        value = (
+            computed_quantity if query_type == "USAGE" else computed_amount
+        )
+        if value == 0 and query_type == "USAGE":
+            value = attributed_usage
+        if value == 0 and query_type == "COST":
+            value = attributed_cost
+        return {
+            "period_start": self._stringify_time(
+                getattr(item, "time_usage_started", "")
+            ),
+            "period_end": self._stringify_time(getattr(item, "time_usage_ended", "")),
+            "sku_name": getattr(item, "sku_name", "") or "",
+            "sku_part_number": getattr(item, "sku_part_number", "") or "",
+            "service": getattr(item, "service", "") or "",
+            "resource_name": getattr(item, "resource_name", "") or "",
+            "resource_id": getattr(item, "resource_id", "") or "",
+            "region": getattr(item, "region", "") or "",
+            "compartment_name": getattr(item, "compartment_name", "") or "",
+            "computed_amount": computed_amount,
+            "computed_quantity": computed_quantity,
+            "value": value,
+            "unit": getattr(item, "unit", "") or "",
+            "currency": getattr(item, "currency", "") or "",
+        }
+
+    def _to_cost_analysis_payload(
+        self,
+        *,
+        context: Dict[str, Any],
+        start_time: datetime,
+        end_time: datetime,
+        granularity: str,
+        query_type: str,
+        rows: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        series_names = sorted({row["sku_name"] or "Unknown SKU" for row in rows})
+        period_map: Dict[str, Dict[str, Any]] = {}
+        totals_by_sku = {name: 0.0 for name in series_names}
+        total = 0.0
+        for row in rows:
+            period = row["period_start"] or self._stringify_time(start_time)
+            sku_name = row["sku_name"] or "Unknown SKU"
+            bucket = period_map.setdefault(
+                period,
+                {"period": period, "series": {name: 0.0 for name in series_names}},
+            )
+            value = self._safe_float(row.get("value"))
+            bucket["series"][sku_name] = bucket["series"].get(sku_name, 0.0) + value
+            bucket["total"] = bucket.get("total", 0.0) + value
+            totals_by_sku[sku_name] = totals_by_sku.get(sku_name, 0.0) + value
+            total += value
+
+        periods = sorted(period_map.values(), key=lambda item: item["period"])
+        series = [
+            {
+                "label": name,
+                "total": round(totals_by_sku.get(name, 0.0), 6),
+                "points": [
+                    {
+                        "period": period["period"],
+                        "value": round(period["series"].get(name, 0.0), 6),
+                    }
+                    for period in periods
+                ],
+            }
+            for name in series_names
+        ]
+        currency = next((row["currency"] for row in rows if row.get("currency")), "")
+        unit = next((row["unit"] for row in rows if row.get("unit")), "")
+        return {
+            "tenant_name": context["tenant_name"],
+            "tenancy_id": context["tenancy_id"],
+            "start_time": self._stringify_time(start_time),
+            "end_time": self._stringify_time(end_time),
+            "granularity": granularity,
+            "query_type": query_type,
+            "currency": currency,
+            "unit": unit,
+            "total": round(total, 6),
+            "series_names": series_names,
+            "periods": periods,
+            "series": series,
+            "details": sorted(
+                rows,
+                key=lambda row: (
+                    row.get("period_start", ""),
+                    row.get("sku_name", ""),
+                ),
+            ),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "filter": "Database Exadata Cloud@Customer OCPU and OCPU BYOL",
+        }
+
+    def _to_budget_row(self, item: Any) -> Dict[str, Any]:
+        amount = self._safe_float(getattr(item, "amount", None))
+        actual_spend = self._safe_float(getattr(item, "actual_spend", None))
+        forecasted_spend = self._safe_float(getattr(item, "forecasted_spend", None))
+        return {
+            "id": getattr(item, "id", "") or "",
+            "display_name": getattr(item, "display_name", "") or "",
+            "description": getattr(item, "description", "") or "",
+            "amount": amount,
+            "actual_spend": actual_spend,
+            "forecasted_spend": forecasted_spend,
+            "percent_used": round((actual_spend / amount) * 100, 2)
+            if amount > 0
+            else 0.0,
+            "reset_period": getattr(item, "reset_period", "") or "",
+            "target_type": getattr(item, "target_type", "") or "",
+            "targets": list(getattr(item, "targets", []) or []),
+            "lifecycle_state": getattr(item, "lifecycle_state", "") or "",
+            "alert_rule_count": safe_int(getattr(item, "alert_rule_count", 0)),
+            "time_spend_computed": self._stringify_time(
+                getattr(item, "time_spend_computed", "")
+            ),
+            "time_created": self._stringify_time(getattr(item, "time_created", "")),
+        }
+
+    @staticmethod
+    def _safe_float(value: Any) -> float:
+        try:
+            if value in (None, ""):
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _is_exacc_ocpu_sku(sku_name: str) -> bool:
+        normalized = str(sku_name or "").lower().replace("@", " at ")
+        return all(term in normalized for term in EXACC_COST_SKU_TERMS)
 
     def _to_infrastructure(
         self, context: Dict[str, Any], region: str, item: Any
