@@ -796,7 +796,7 @@ def render_dashboard(inventory: Inventory) -> str:
       padding: 16px 18px;
       border-bottom: 1px solid var(--line);
       display: grid;
-      grid-template-columns: repeat(3, minmax(160px, 1fr)) auto;
+      grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(130px, 0.85fr) minmax(190px, 1fr) auto;
       gap: 12px;
       align-items: end;
     }}
@@ -1256,7 +1256,8 @@ def render_dashboard(inventory: Inventory) -> str:
       refresh: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2"></path><path d="M3 12A9 9 0 0 1 18.5 5.8"></path><path d="M18 2v4h4"></path><path d="M6 22v-4H2"></path></svg>',
       left: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"></path></svg>',
       right: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"></path></svg>',
-      clock: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>'
+      clock: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>',
+      trend: '<svg class="icon" aria-hidden="true" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"></path><path d="M14 7h7v7"></path></svg>'
     }};
 
     function escapeHtml(value) {{
@@ -1692,7 +1693,15 @@ def render_dashboard(inventory: Inventory) -> str:
       ["1h", "1 hour"],
       ["1d", "1 day"]
     ];
+    const trendMethods = [
+      ["least_squares", "Least-squares trend"],
+      ["robust_median", "Robust median slope"],
+      ["rolling_mean", "7-day rolling mean"],
+      ["ewma", "EWMA smoothing"],
+      ["rolling_p90", "14-day rolling P90"]
+    ];
     const chartColors = ["#2557a7", "#1f7a4d", "#a15c0b", "#0e7490", "#b42318"];
+    const trendColor = "#6f3cc3";
     const dayMs = 24 * 60 * 60 * 1000;
 
     function defaultMetricWindow() {{
@@ -1702,7 +1711,8 @@ def render_dashboard(inventory: Inventory) -> str:
       return {{
         startIso: start.toISOString(),
         endIso: end.toISOString(),
-        interval: "1h"
+        interval: "1h",
+        trendMethod: "least_squares"
       }};
     }}
 
@@ -1713,6 +1723,8 @@ def render_dashboard(inventory: Inventory) -> str:
     function metricWindowFor(metricKey) {{
       if (!state.metricWindows[metricKey]) {{
         state.metricWindows[metricKey] = defaultMetricWindow();
+      }} else if (!state.metricWindows[metricKey].trendMethod) {{
+        state.metricWindows[metricKey].trendMethod = "least_squares";
       }}
       return state.metricWindows[metricKey];
     }}
@@ -1723,7 +1735,11 @@ def render_dashboard(inventory: Inventory) -> str:
           key: "",
           loading: false,
           error: "",
-          data: null
+          data: null,
+          trendKey: "",
+          trendLoading: false,
+          trendError: "",
+          trendData: null
         }};
       }}
       return state.metricLoads[metricKey];
@@ -1731,6 +1747,10 @@ def render_dashboard(inventory: Inventory) -> str:
 
     function metricRequestKey(metricWindow) {{
       return `${{metricWindow.startIso}}|${{metricWindow.endIso}}|${{metricWindow.interval}}`;
+    }}
+
+    function trendRequestKey(metricWindow) {{
+      return `${{metricWindow.trendMethod || "least_squares"}}|60`;
     }}
 
     function toLocalInputValue(isoValue) {{
@@ -1793,6 +1813,20 @@ def render_dashboard(inventory: Inventory) -> str:
       }};
     }}
 
+    function trendPayload(item, resourceType) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
+      return {{
+        ...metricPayload(item, resourceType),
+        resource_type: resourceType,
+        method: metricWindow.trendMethod || "least_squares",
+        history_days: 60,
+        start_time: undefined,
+        end_time: new Date().toISOString(),
+        interval: "1d"
+      }};
+    }}
+
     function metricLoadingChanged(item, resourceType) {{
       return state.view === "detail"
         && state.detailType === resourceType
@@ -1833,6 +1867,7 @@ def render_dashboard(inventory: Inventory) -> str:
         }});
         const data = await readJson(response);
         state.metricLoads[metricKey] = {{
+          ...state.metricLoads[metricKey],
           key,
           loading: false,
           error: "",
@@ -1840,10 +1875,66 @@ def render_dashboard(inventory: Inventory) -> str:
         }};
       }} catch (error) {{
         state.metricLoads[metricKey] = {{
+          ...state.metricLoads[metricKey],
           key,
           loading: false,
           error: error.message,
           data: null
+        }};
+      }}
+
+      if (metricLoadingChanged(item, resourceType)) {{
+        render();
+      }}
+    }}
+
+    async function loadResourceTrend(item, resourceType, force = false) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
+      const key = trendRequestKey(metricWindow);
+      const record = metricRecordFor(metricKey);
+      if (!force && (record.trendLoading || record.trendKey === key)) return;
+      if (!apiAvailable()) {{
+        state.metricLoads[metricKey] = {{
+          ...record,
+          trendKey: key,
+          trendLoading: false,
+          trendError: "Local server unavailable",
+          trendData: null
+        }};
+        render();
+        return;
+      }}
+
+      state.metricLoads[metricKey] = {{
+        ...record,
+        trendKey: key,
+        trendLoading: true,
+        trendError: ""
+      }};
+      render();
+
+      try {{
+        const response = await fetch("/api/cpu-trend", {{
+          method: "POST",
+          headers: {{ "Content-Type": "application/json" }},
+          body: JSON.stringify(trendPayload(item, resourceType))
+        }});
+        const data = await readJson(response);
+        state.metricLoads[metricKey] = {{
+          ...state.metricLoads[metricKey],
+          trendKey: key,
+          trendLoading: false,
+          trendError: "",
+          trendData: data
+        }};
+      }} catch (error) {{
+        state.metricLoads[metricKey] = {{
+          ...state.metricLoads[metricKey],
+          trendKey: key,
+          trendLoading: false,
+          trendError: error.message,
+          trendData: null
         }};
       }}
 
@@ -1920,22 +2011,28 @@ def render_dashboard(inventory: Inventory) -> str:
         .join(" ");
     }}
 
-    function renderMetricChart(metricData) {{
+    function renderMetricChart(metricData, trendData = null) {{
       const series = (metricData && metricData.series ? metricData.series : [])
         .map((item) => ({{
           ...item,
           points: (item.points || []).filter((point) => Number.isFinite(Number(point.value)) && !Number.isNaN(Date.parse(point.timestamp || "")))
         }}))
         .filter((item) => item.points.length);
+      const trendPoints = trendData && Array.isArray(trendData.trend_points)
+        ? trendData.trend_points.filter((point) => Number.isFinite(Number(point.value)) && !Number.isNaN(Date.parse(point.timestamp || "")))
+        : [];
       const title = metricData ? metricData.display_name || metricData.name : "Metric";
-      if (!series.length) {{
+      if (!series.length && !trendPoints.length) {{
         return `<article class="metric-chart">
           <div class="metric-chart-head"><div><h4>${{escapeHtml(title)}}</h4><small>No metric points returned</small></div></div>
           <div class="empty">No data for this timeframe</div>
         </article>`;
       }}
 
-      const allTimes = series.flatMap((item) => item.points.map((point) => Date.parse(point.timestamp)));
+      const allTimes = [
+        ...series.flatMap((item) => item.points.map((point) => Date.parse(point.timestamp))),
+        ...trendPoints.map((point) => Date.parse(point.timestamp))
+      ];
       const minTime = Math.min(...allTimes);
       const maxTime = Math.max(...allTimes);
       const chart = {{ left: 44, top: 18, width: 580, height: 186 }};
@@ -1948,6 +2045,9 @@ def render_dashboard(inventory: Inventory) -> str:
         const path = chartPath(item.points, minTime, maxTime, chart);
         return `<path d="${{path}}" fill="none" stroke="${{color}}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path>`;
       }}).join("");
+      const trendPath = trendPoints.length
+        ? `<path d="${{chartPath(trendPoints, minTime, maxTime, chart)}}" fill="none" stroke="${{trendColor}}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="7 6"></path>`
+        : "";
       const hoverPoints = series.map((item, index) => {{
         const color = chartColors[index % chartColors.length];
         const label = item.label || `Series ${{index + 1}}`;
@@ -1959,27 +2059,58 @@ def render_dashboard(inventory: Inventory) -> str:
           return `<circle class="chart-hover-point" tabindex="0" cx="${{position.x.toFixed(1)}}" cy="${{position.y.toFixed(1)}}" r="9" style="--point-color:${{color}}" data-metric="${{escapeHtml(title)}}" data-label="${{escapeHtml(label)}}" data-time="${{escapeHtml(timeLabel)}}" data-value="${{escapeHtml(valueLabel)}}" aria-label="${{escapeHtml(detail)}}"><title>${{escapeHtml(detail)}}</title></circle>`;
         }}).join("");
       }}).join("");
+      const trendLabel = trendData
+        ? `Trend: ${{trendData.method_label || trendData.method || "CPU"}}`
+        : "Trend";
+      const trendHoverPoints = trendPoints.map((point) => {{
+        const position = chartPointPosition(point, minTime, maxTime, chart);
+        const timeLabel = formatChartTime(point.timestamp);
+        const valueLabel = formatPercent(point.value);
+        const detail = `${{title}} | ${{trendLabel}} | ${{timeLabel}} | ${{valueLabel}}`;
+        return `<circle class="chart-hover-point" tabindex="0" cx="${{position.x.toFixed(1)}}" cy="${{position.y.toFixed(1)}}" r="9" style="--point-color:${{trendColor}}" data-metric="${{escapeHtml(title)}}" data-label="${{escapeHtml(trendLabel)}}" data-time="${{escapeHtml(timeLabel)}}" data-value="${{escapeHtml(valueLabel)}}" aria-label="${{escapeHtml(detail)}}"><title>${{escapeHtml(detail)}}</title></circle>`;
+      }}).join("");
       const legend = series.map((item, index) => {{
         const color = chartColors[index % chartColors.length];
         return `<span class="legend-item"><span class="legend-dot" style="background:${{color}}"></span>${{escapeHtml(item.label || `Node ${{index + 1}}`)}}</span>`;
       }}).join("");
-      const stats = metricStats({{ ...metricData, series }});
+      const trendLegend = trendPoints.length
+        ? `<span class="legend-item"><span class="legend-dot" style="background:${{trendColor}}"></span>${{escapeHtml(trendLabel)}}</span>`
+        : "";
+      const stats = metricStats({{ ...(metricData || {{}}), series }});
+      const metricName = metricData ? metricData.name || "" : "";
+      const subtitle = trendPoints.length
+        ? `${{metricName}} | Trend uses ${{trendData.history_days || 60}}d daily history`
+        : metricName;
       return `<article class="metric-chart">
         <div class="metric-chart-head">
-          <div><h4>${{escapeHtml(title)}}</h4><small>${{escapeHtml(metricData.name || "")}}</small></div>
+          <div><h4>${{escapeHtml(title)}}</h4><small>${{escapeHtml(subtitle)}}</small></div>
           <div class="chart-summary"><strong>${{formatPercent(stats.latest)}}</strong>avg ${{formatPercent(stats.average)}}</div>
         </div>
         <svg class="chart-svg" viewBox="0 0 650 242" role="img" aria-label="${{escapeHtml(title)}} chart">
           ${{grid}}
           <line class="chart-gridline" x1="${{chart.left}}" y1="${{chart.top + chart.height}}" x2="${{chart.left + chart.width}}" y2="${{chart.top + chart.height}}"></line>
           ${{paths}}
+          ${{trendPath}}
           ${{hoverPoints}}
+          ${{trendHoverPoints}}
           <text class="chart-axis" x="${{chart.left}}" y="230">${{escapeHtml(formatChartTime(minTime))}}</text>
           <text class="chart-axis" x="${{chart.left + chart.width - 110}}" y="230">${{escapeHtml(formatChartTime(maxTime))}}</text>
         </svg>
         <div class="chart-tooltip" role="tooltip" aria-hidden="true"></div>
-        <div class="chart-legend">${{legend}}</div>
+        <div class="chart-legend">${{legend}}${{trendLegend}}</div>
       </article>`;
+    }}
+
+    function trendMetricData(trendData) {{
+      if (!trendData || !Array.isArray(trendData.history_points)) return null;
+      return {{
+        name: trendData.metric_name || "CpuUtilization",
+        display_name: trendData.display_name || "CPU Utilization",
+        series: [{{
+          label: "Average CPU",
+          points: trendData.history_points
+        }}]
+      }};
     }}
 
     function renderResourceMetricsPanel(item, resourceType, namespaceFallback) {{
@@ -1988,31 +2119,49 @@ def render_dashboard(inventory: Inventory) -> str:
       const record = metricRecordFor(metricKey);
       const data = record.data;
       const interval = metricWindow.interval || "1h";
-      const status = record.loading
+      const trendMethod = metricWindow.trendMethod || "least_squares";
+      const baseStatus = record.loading
         ? "Loading metrics"
         : record.error
           ? record.error
           : data
             ? `${{data.namespace || namespaceFallback}} | ${{escapeHtml(data.interval || interval)}}`
             : "Metrics pending";
-      const statusTone = record.error ? "critical" : "neutral";
+      const trendStatus = record.trendLoading
+        ? " | Calculating CPU trend"
+        : record.trendError
+          ? ` | Trend: ${{record.trendError}}`
+          : record.trendData
+            ? ` | Trend: ${{record.trendData.method_label || trendMethod}}, ${{record.trendData.history_days || 60}}d history`
+            : "";
+      const status = `${{baseStatus}}${{trendStatus}}`;
+      const statusTone = record.error || record.trendError ? "critical" : "neutral";
       const options = metricIntervals
         .map(([value, label]) => intervalOption(value, label, interval))
         .join("");
+      const trendOptions = trendMethods
+        .map(([value, label]) => intervalOption(value, label, trendMethod))
+        .join("");
+      const cpuTrend = record.trendData && record.trendData.metric_name === "CpuUtilization"
+        ? record.trendData
+        : null;
+      const cpuMetric = cpuTrend ? trendMetricData(cpuTrend) : data && data.metrics ? data.metrics.CpuUtilization : null;
       const charts = data && data.metrics
-        ? `${{renderMetricChart(data.metrics.CpuUtilization)}}${{renderMetricChart(data.metrics.MemoryUtilization)}}`
-        : `${{renderMetricChart({{ name: "CpuUtilization", display_name: "CPU Utilization", series: [] }})}}${{renderMetricChart({{ name: "MemoryUtilization", display_name: "Memory Utilization", series: [] }})}}`;
+        ? `${{renderMetricChart(cpuMetric, cpuTrend)}}${{renderMetricChart(data.metrics.MemoryUtilization)}}`
+        : `${{renderMetricChart(cpuMetric || {{ name: "CpuUtilization", display_name: "CPU Utilization", series: [] }}, cpuTrend)}}${{renderMetricChart({{ name: "MemoryUtilization", display_name: "Memory Utilization", series: [] }})}}`;
       return `<section class="panel metrics-panel" data-metrics-resource-type="${{escapeHtml(resourceType)}}" data-metrics-resource-id="${{escapeHtml(item.id)}}">
         <div class="panel-header"><h3>CPU and Memory</h3><span>${{escapeHtml(item.region || "-")}}</span></div>
         <div class="metric-controls">
           <label class="metric-control"><span>Start</span><input class="metrics-start" type="datetime-local" step="3600" value="${{escapeHtml(toLocalInputValue(metricWindow.startIso))}}"></label>
           <label class="metric-control"><span>End</span><input class="metrics-end" type="datetime-local" step="3600" value="${{escapeHtml(toLocalInputValue(metricWindow.endIso))}}"></label>
           <label class="metric-control"><span>Interval</span><select class="metrics-interval">${{options}}</select></label>
+          <label class="metric-control trend-control"><span>Trend</span><select class="metrics-trend-method">${{trendOptions}}</select></label>
           <div class="metric-actions">
             <button class="icon-button" type="button" data-metrics-action="prev-day" title="Previous day" aria-label="Previous day" ${{record.loading ? "disabled" : ""}}>${{icons.left}}</button>
             <button class="icon-button" type="button" data-metrics-action="last-day" title="Last day" aria-label="Last day" ${{record.loading ? "disabled" : ""}}>${{icons.clock}}</button>
             <button class="icon-button" type="button" data-metrics-action="next-day" title="Next day" aria-label="Next day" ${{record.loading ? "disabled" : ""}}>${{icons.right}}</button>
             <button class="metric-apply-button" type="button" data-metrics-action="apply" ${{record.loading ? "disabled" : ""}}>${{icons.refresh}}<span>Apply</span></button>
+            <button class="metric-apply-button" type="button" data-metrics-action="trend" title="Show CPU trend from 60 days of daily metrics" ${{record.trendLoading ? "disabled" : ""}}>${{icons.trend}}<span>Trend CPU</span></button>
           </div>
         </div>
         <div class="metric-status" data-tone="${{statusTone}}">${{escapeHtml(status)}}</div>
@@ -2030,9 +2179,11 @@ def render_dashboard(inventory: Inventory) -> str:
 
     function applyMetricControls(container, item, resourceType) {{
       const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
       const startIso = fromLocalInputValue(container.querySelector(".metrics-start").value);
       const endIso = fromLocalInputValue(container.querySelector(".metrics-end").value);
       const interval = container.querySelector(".metrics-interval").value || "1h";
+      const trendMethod = container.querySelector(".metrics-trend-method")?.value || "least_squares";
       const record = metricRecordFor(metricKey);
       if (!startIso || !endIso || Date.parse(startIso) >= Date.parse(endIso)) {{
         state.metricLoads[metricKey] = {{
@@ -2043,8 +2194,27 @@ def render_dashboard(inventory: Inventory) -> str:
         render();
         return;
       }}
-      state.metricWindows[metricKey] = {{ startIso, endIso, interval }};
+      state.metricWindows[metricKey] = {{ startIso, endIso, interval, trendMethod }};
+      if ((metricWindow.trendMethod || "least_squares") !== trendMethod) {{
+        state.metricLoads[metricKey] = {{
+          ...record,
+          trendKey: "",
+          trendError: "",
+          trendData: null
+        }};
+      }}
       loadResourceMetrics(item, resourceType, true);
+    }}
+
+    function applyTrendControls(container, item, resourceType) {{
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const metricWindow = metricWindowFor(metricKey);
+      const trendMethod = container.querySelector(".metrics-trend-method")?.value || "least_squares";
+      state.metricWindows[metricKey] = {{
+        ...metricWindow,
+        trendMethod
+      }};
+      loadResourceTrend(item, resourceType, true);
     }}
 
     function shiftMetricWindow(item, resourceType, days) {{
@@ -2060,7 +2230,12 @@ def render_dashboard(inventory: Inventory) -> str:
     }}
 
     function setLastDayMetricWindow(item, resourceType) {{
-      state.metricWindows[metricResourceKey(resourceType, item.id)] = defaultMetricWindow();
+      const metricKey = metricResourceKey(resourceType, item.id);
+      const trendMethod = metricWindowFor(metricKey).trendMethod || "least_squares";
+      state.metricWindows[metricKey] = {{
+        ...defaultMetricWindow(),
+        trendMethod
+      }};
       loadResourceMetrics(item, resourceType, true);
     }}
 
@@ -2933,6 +3108,8 @@ def render_dashboard(inventory: Inventory) -> str:
         const action = metricsButton.dataset.metricsAction;
         if (action === "apply") {{
           applyMetricControls(container, item, resourceType);
+        }} else if (action === "trend") {{
+          applyTrendControls(container, item, resourceType);
         }} else if (action === "prev-day") {{
           shiftMetricWindow(item, resourceType, -1);
         }} else if (action === "next-day") {{

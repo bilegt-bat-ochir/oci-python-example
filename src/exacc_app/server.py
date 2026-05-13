@@ -30,6 +30,15 @@ DEMO_COST_SKUS = (
     ("Database Exadata Cloud at Customer - OCPU BYOL", 0.11),
     ("Database Exadata Cloud at Customer - OCPU", 0.42),
 )
+TREND_METHODS = {
+    "least_squares": "Least-squares trend",
+    "robust_median": "Robust median slope",
+    "rolling_mean": "7-day rolling mean",
+    "ewma": "EWMA smoothing",
+    "rolling_p90": "14-day rolling P90",
+}
+DEFAULT_TREND_HISTORY_DAYS = 60
+MAX_TREND_HISTORY_DAYS = 180
 
 
 def list_oci_profiles(config_file: str = "~/.oci/config") -> list[str]:
@@ -215,6 +224,262 @@ def sample_database_metrics(
             }
 
     return metrics
+
+
+def parse_bounded_int(
+    value: Any, *, default: int, minimum: int, maximum: int, label: str
+) -> int:
+    if value in (None, ""):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise OCIAppError(f"{label} must be a number.") from exc
+    if parsed < minimum:
+        return minimum
+    if parsed > maximum:
+        return maximum
+    return parsed
+
+
+def point_timestamp(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def clamp_percent(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def average(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
+
+
+def aggregate_metric_points(metric: Dict[str, Any] | None) -> list[Dict[str, Any]]:
+    if not metric:
+        return []
+    buckets: dict[datetime, list[float]] = {}
+    for series in metric.get("series", []) or []:
+        for point in series.get("points", []) or []:
+            timestamp = point_timestamp(point.get("timestamp"))
+            if timestamp is None:
+                continue
+            try:
+                value = float(point.get("value"))
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(value):
+                continue
+            buckets.setdefault(timestamp, []).append(value)
+    return [
+        {
+            "timestamp": timestamp.isoformat(),
+            "value": round(average(values), 4),
+        }
+        for timestamp, values in sorted(buckets.items(), key=lambda item: item[0])
+        if values
+    ]
+
+
+def median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    midpoint = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[midpoint]
+    return (ordered[midpoint - 1] + ordered[midpoint]) / 2
+
+
+def percentile(values: list[float], percentile_value: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (len(ordered) - 1) * percentile_value
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return ordered[int(rank)]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (rank - lower)
+
+
+def least_squares_parameters(values: list[float]) -> tuple[float, float]:
+    if len(values) < 2:
+        return 0.0, values[0] if values else 0.0
+    x_mean = (len(values) - 1) / 2
+    y_mean = average(values)
+    denominator = sum((index - x_mean) ** 2 for index in range(len(values)))
+    slope = (
+        sum((index - x_mean) * (value - y_mean) for index, value in enumerate(values))
+        / denominator
+        if denominator
+        else 0.0
+    )
+    intercept = y_mean - slope * x_mean
+    return slope, intercept
+
+
+def least_squares_trend(values: list[float]) -> list[float]:
+    if not values:
+        return []
+    slope, intercept = least_squares_parameters(values)
+    return [intercept + slope * index for index in range(len(values))]
+
+
+def robust_median_trend(values: list[float]) -> list[float]:
+    if not values:
+        return []
+    if len(values) == 1:
+        return values[:]
+    slopes = [
+        (right_value - left_value) / (right_index - left_index)
+        for left_index, left_value in enumerate(values)
+        for right_index, right_value in enumerate(values[left_index + 1 :], start=left_index + 1)
+    ]
+    slope = median(slopes)
+    intercept = median([value - slope * index for index, value in enumerate(values)])
+    return [intercept + slope * index for index in range(len(values))]
+
+
+def rolling_mean_trend(values: list[float], window: int = 7) -> list[float]:
+    if not values:
+        return []
+    return [
+        average(values[max(0, index - window + 1) : index + 1])
+        for index in range(len(values))
+    ]
+
+
+def ewma_trend(values: list[float], alpha: float = 0.3) -> list[float]:
+    if not values:
+        return []
+    trend = []
+    level = values[0]
+    for value in values:
+        level = alpha * value + (1 - alpha) * level
+        trend.append(level)
+    return trend
+
+
+def rolling_p90_trend(values: list[float], window: int = 14) -> list[float]:
+    if not values:
+        return []
+    return [
+        percentile(values[max(0, index - window + 1) : index + 1], 0.9)
+        for index in range(len(values))
+    ]
+
+
+def trend_values(
+    history_points: list[Dict[str, Any]], method: str
+) -> list[Dict[str, Any]]:
+    values = [
+        float(point["value"])
+        for point in history_points
+        if isinstance(point.get("value"), (int, float))
+    ]
+    if not values:
+        return []
+
+    if method == "robust_median":
+        raw_trend = robust_median_trend(values)
+    elif method == "rolling_mean":
+        raw_trend = rolling_mean_trend(values)
+    elif method == "ewma":
+        raw_trend = ewma_trend(values)
+    elif method == "rolling_p90":
+        raw_trend = rolling_p90_trend(values)
+    else:
+        raw_trend = least_squares_trend(values)
+
+    return [
+        {
+            "timestamp": point["timestamp"],
+            "value": round(clamp_percent(value), 4),
+        }
+        for point, value in zip(history_points, raw_trend)
+    ]
+
+
+def history_span_days(history_points: list[Dict[str, Any]]) -> float:
+    if len(history_points) < 2:
+        return 0.0
+    first_timestamp = point_timestamp(history_points[0].get("timestamp"))
+    last_timestamp = point_timestamp(history_points[-1].get("timestamp"))
+    if first_timestamp is None or last_timestamp is None:
+        return 0.0
+    return max(0.0, (last_timestamp - first_timestamp).total_seconds() / 86400)
+
+
+def build_cpu_trend(
+    metrics: Dict[str, Any],
+    *,
+    resource_type: str,
+    method: str,
+    history_days: int,
+) -> Dict[str, Any]:
+    cpu_metric = (metrics.get("metrics") or {}).get("CpuUtilization")
+    history_points = aggregate_metric_points(cpu_metric)
+    span_days = history_span_days(history_points)
+    if len(history_points) < DEFAULT_TREND_HISTORY_DAYS and span_days < (
+        DEFAULT_TREND_HISTORY_DAYS - 1
+    ):
+        raise OCIAppError(
+            "CPU trend requires at least 60 days of daily metric history; "
+            f"received {len(history_points)} daily point(s)."
+        )
+    trend_points = trend_values(history_points, method)
+    trend_delta = (
+        trend_points[-1]["value"] - trend_points[0]["value"]
+        if len(trend_points) >= 2
+        else 0.0
+    )
+    trend_slope = trend_delta / span_days if span_days else 0.0
+    if trend_delta > 0.5:
+        trend_direction = "up"
+    elif trend_delta < -0.5:
+        trend_direction = "down"
+    else:
+        trend_direction = "flat"
+    return {
+        "namespace": metrics.get("namespace"),
+        "resource_type": resource_type,
+        "resource_id": metrics.get("resource_id"),
+        "resource_name": metrics.get("resource_name"),
+        "region": metrics.get("region"),
+        "compartment_id": metrics.get("compartment_id"),
+        "metric_name": "CpuUtilization",
+        "display_name": "CPU Utilization",
+        "unit": "percent",
+        "method": method,
+        "method_label": TREND_METHODS.get(method, TREND_METHODS["least_squares"]),
+        "available_methods": [
+            {"value": value, "label": label}
+            for value, label in TREND_METHODS.items()
+        ],
+        "history_days": history_days,
+        "history_point_count": len(history_points),
+        "history_span_days": round(span_days, 2),
+        "trend_delta_percent": round(trend_delta, 4),
+        "trend_slope_per_day": round(trend_slope, 4),
+        "trend_direction": trend_direction,
+        "interval": "1d",
+        "history_start_time": metrics.get("start_time"),
+        "history_end_time": metrics.get("end_time"),
+        "query": cpu_metric.get("query") if cpu_metric else "",
+        "queries": cpu_metric.get("queries") if cpu_metric else [],
+        "history_points": history_points,
+        "trend_points": trend_points,
+    }
 
 
 def demo_cost_sources() -> list[Dict[str, Any]]:
@@ -409,6 +674,9 @@ def serve_inventory_dashboard(
             if parsed.path == "/api/database-metrics":
                 self._handle_database_metrics()
                 return
+            if parsed.path == "/api/cpu-trend":
+                self._handle_cpu_trend()
+                return
             if parsed.path == "/api/cost-analysis":
                 self._handle_cost_analysis()
                 return
@@ -584,6 +852,117 @@ def serve_inventory_dashboard(
                 )
                 return
             self._send_json(200, metrics)
+
+        def _handle_cpu_trend(self) -> None:
+            try:
+                data = self._read_json()
+                resource_type = str(data.get("resource_type") or "").strip()
+                if resource_type not in {"vm_cluster", "database"}:
+                    raise OCIAppError(
+                        "Trend resource type must be vm_cluster or database."
+                    )
+                compartment_id = str(data.get("compartment_id") or "").strip()
+                region = str(data.get("region") or "").strip()
+                if not compartment_id:
+                    raise OCIAppError("Resource compartment OCID is required.")
+                if not region:
+                    raise OCIAppError("Resource region is required.")
+
+                method = str(data.get("method") or "least_squares").strip()
+                if method not in TREND_METHODS:
+                    raise OCIAppError(
+                        "Trend method must be one of "
+                        f"{', '.join(TREND_METHODS)}."
+                    )
+                history_days = parse_bounded_int(
+                    data.get("history_days"),
+                    default=DEFAULT_TREND_HISTORY_DAYS,
+                    minimum=DEFAULT_TREND_HISTORY_DAYS,
+                    maximum=MAX_TREND_HISTORY_DAYS,
+                    label="Trend history days",
+                )
+
+                now = datetime.now(timezone.utc)
+                end_time = parse_metric_time(data.get("end_time"), now)
+                start_time = end_time - timedelta(days=history_days)
+
+                if resource_type == "database":
+                    database_id = str(data.get("database_id") or "").strip()
+                    database_name = str(data.get("database_name") or "").strip()
+                    if not database_id:
+                        raise OCIAppError("Database OCID is required.")
+                    if data.get("sample"):
+                        metrics = sample_database_metrics(
+                            database_id=database_id,
+                            database_name=database_name,
+                            compartment_id=compartment_id,
+                            region=region,
+                            start_time=start_time,
+                            end_time=end_time,
+                            interval="1d",
+                        )
+                    else:
+                        profile = str(data.get("profile", "")).strip()
+                        if not profile:
+                            raise OCIAppError("OCI profile is required.")
+                        client = OCIInventoryClient(
+                            profile=profile,
+                            config_file=str(data.get("config_file") or "~/.oci/config"),
+                        )
+                        metrics = client.fetch_database_metrics(
+                            database_id=database_id,
+                            database_name=database_name,
+                            compartment_id=compartment_id,
+                            region=region,
+                            start_time=start_time,
+                            end_time=end_time,
+                            interval="1d",
+                        )
+                else:
+                    vm_cluster_id = str(data.get("vm_cluster_id") or "").strip()
+                    vm_cluster_name = str(data.get("vm_cluster_name") or "").strip()
+                    if not vm_cluster_id:
+                        raise OCIAppError("VM cluster OCID is required.")
+                    if data.get("sample"):
+                        metrics = sample_vm_cluster_metrics(
+                            vm_cluster_id=vm_cluster_id,
+                            vm_cluster_name=vm_cluster_name,
+                            compartment_id=compartment_id,
+                            region=region,
+                            start_time=start_time,
+                            end_time=end_time,
+                            interval="1d",
+                        )
+                    else:
+                        profile = str(data.get("profile", "")).strip()
+                        if not profile:
+                            raise OCIAppError("OCI profile is required.")
+                        client = OCIInventoryClient(
+                            profile=profile,
+                            config_file=str(data.get("config_file") or "~/.oci/config"),
+                        )
+                        metrics = client.fetch_vm_cluster_metrics(
+                            vm_cluster_id=vm_cluster_id,
+                            vm_cluster_name=vm_cluster_name,
+                            compartment_id=compartment_id,
+                            region=region,
+                            start_time=start_time,
+                            end_time=end_time,
+                            interval="1d",
+                        )
+                trend = build_cpu_trend(
+                    metrics,
+                    resource_type=resource_type,
+                    method=method,
+                    history_days=history_days,
+                )
+            except OCIAppError as exc:
+                self._send_json(400, {"error": str(exc)})
+                return
+            except Exception as exc:
+                self._send_json(500, {"error": f"Could not calculate CPU trend: {exc}"})
+                return
+            self._send_json(200, trend)
 
         def _handle_cost_analysis(self) -> None:
             try:
